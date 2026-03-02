@@ -10,6 +10,7 @@ const NAV = [
   { path: '/bids', label: 'Bids', icon: '⊖' },
   { path: '/trades', label: 'Trade History', icon: '≡' },
   { path: '/wallet', label: 'Wallet', icon: '◎' },
+  { path: '/whales', label: 'Whale Tracker', icon: '◬' },
   { path: '/logs', label: 'Logs', icon: '▤' },
 ];
 

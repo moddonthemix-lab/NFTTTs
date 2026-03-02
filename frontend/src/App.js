@@ -11,6 +11,7 @@ import Trades from './pages/Trades';
 import Wallet from './pages/Wallet';
 import Logs from './pages/Logs';
 import Favorites from './pages/Favorites';
+import WhaleTracker from './pages/WhaleTracker';
 import { useSocket } from './hooks/useSocket';
 
 // AppInner only mounts after PasswordGate auth passes, so
@@ -84,6 +85,7 @@ function AppInner() {
               path="/logs"
               element={<Logs logs={logs} />}
             />
+            <Route path="/whales" element={<WhaleTracker />} />
           </Routes>
         </main>
       </div>

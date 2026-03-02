@@ -390,6 +390,85 @@ app.delete('/api/watchlist/:slug', (req, res) => {
   res.json({ success: true });
 });
 
+// --- Whale Tracker ---
+app.get('/api/whales', (req, res) => res.json(db.getWhales(wa())));
+
+app.post('/api/whales', (req, res) => {
+  const { address, label } = req.body;
+  if (!address) return res.status(400).json({ error: 'address required' });
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) return res.status(400).json({ error: 'invalid Ethereum address' });
+  try {
+    db.addWhale(wa(), { address, label: label || '' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/whales/:address', (req, res) => {
+  db.removeWhale(wa(), req.params.address);
+  res.json({ success: true });
+});
+
+// Fetch NFT holdings for a tracked wallet — groups by collection + estimates value
+app.get('/api/whales/:address/nfts', async (req, res) => {
+  try {
+    const { address } = req.params;
+
+    // Paginate up to 200 NFTs (4 pages × 50)
+    let allNfts = [];
+    let nextCursor = null;
+    for (let i = 0; i < 4; i++) {
+      const { nfts, next } = await openSeaApi.getNFTsByOwner(address, 50, nextCursor);
+      allNfts = allNfts.concat(nfts);
+      nextCursor = next;
+      if (!next) break;
+    }
+
+    // Group by collection slug, use first NFT image as collection thumbnail
+    const colMap = new Map();
+    for (const nft of allNfts) {
+      const slug = nft.collection || 'unknown';
+      if (!colMap.has(slug)) {
+        colMap.set(slug, { slug, name: slug, image: nft.image_url || null, nfts: [], floorPriceEth: null });
+      }
+      colMap.get(slug).nfts.push({
+        tokenId: nft.identifier,
+        name: nft.name || `#${nft.identifier}`,
+        image: nft.image_url || null,
+        contract: nft.contract,
+        openseaUrl: nft.opensea_url || null,
+      });
+    }
+
+    // Enrich top 8 collections by count with name, image, floor price
+    const collections = Array.from(colMap.values())
+      .sort((a, b) => b.nfts.length - a.nfts.length);
+
+    for (const col of collections.slice(0, 8)) {
+      const [info, stats] = await Promise.allSettled([
+        openSeaApi.getCollection(col.slug),
+        openSeaApi.getCollectionStats(col.slug),
+      ]);
+      if (info.status === 'fulfilled' && info.value) {
+        col.name = info.value.name || col.slug;
+        if (info.value.image_url) col.image = info.value.image_url;
+      }
+      if (stats.status === 'fulfilled' && stats.value) {
+        col.floorPriceEth = stats.value.total?.floor_price || null;
+      }
+    }
+
+    const netValueEth = collections.reduce((sum, c) => {
+      return sum + (c.floorPriceEth ? c.nfts.length * c.floorPriceEth : 0);
+    }, 0);
+
+    res.json({ address, totalNfts: allNfts.length, netValueEth, collections });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Health ---
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

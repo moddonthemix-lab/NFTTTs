@@ -45,7 +45,8 @@ function writeDb(data) {
 // --- Wallet bucket helper ---
 function walletBucket(db, address) {
   if (!db.wallets) db.wallets = {};
-  if (!db.wallets[address]) db.wallets[address] = { favorites: [], watchlist: [] };
+  if (!db.wallets[address]) db.wallets[address] = { favorites: [], watchlist: [], whales: [] };
+  if (!db.wallets[address].whales) db.wallets[address].whales = [];
   return db.wallets[address];
 }
 
@@ -103,6 +104,34 @@ function removeFromWatchlist(address, slug) {
   const bucket = address ? walletBucket(db, address) : db;
   if (!bucket.watchlist) return;
   bucket.watchlist = bucket.watchlist.filter((c) => c.slug !== slug);
+  writeDb(db);
+}
+
+// --- Whale Tracker (wallet-scoped) ---
+function getWhales(address) {
+  if (!address) return [];
+  const db = readDb();
+  return walletBucket(db, address).whales || [];
+}
+
+function addWhale(address, whale) {
+  if (!address) return;
+  const db = readDb();
+  const bucket = walletBucket(db, address);
+  if (bucket.whales.length >= 10) throw new Error('Max 10 whale wallets');
+  if (!bucket.whales.find((w) => w.address.toLowerCase() === whale.address.toLowerCase())) {
+    bucket.whales.push({ ...whale, addedAt: new Date().toISOString() });
+  }
+  writeDb(db);
+}
+
+function removeWhale(address, targetAddr) {
+  if (!address) return;
+  const db = readDb();
+  const bucket = walletBucket(db, address);
+  bucket.whales = bucket.whales.filter(
+    (w) => w.address.toLowerCase() !== targetAddr.toLowerCase()
+  );
   writeDb(db);
 }
 
@@ -181,6 +210,7 @@ module.exports = {
   getPortfolio, getTrades, getBids, getPendingApprovals, getStats,
   getFavorites, addFavorite, removeFavorite,
   getWatchlist, addToWatchlist, removeFromWatchlist,
+  getWhales, addWhale, removeWhale,
   addToPortfolio, removeFromPortfolio,
   addTrade,
   addBid, removeBid, removeBidByOrderHash,

@@ -9,10 +9,26 @@ export default function Favorites() {
   const [bidModal, setBidModal] = useState(null);
   const [bidAmount, setBidAmount] = useState('');
   const [bidHours, setBidHours] = useState(24);
+  const [sort, setSort] = useState('saved');
+  const [expandedCollections, setExpandedCollections] = useState(new Set());
 
   useEffect(() => {
-    favoritesApi.get().then(setFavorites).catch(() => {}).finally(() => setLoading(false));
+    favoritesApi.get().then((list) => {
+      setFavorites(list);
+      // auto-expand all collections on first load
+      const slugs = new Set(list.map((f) => f.collectionSlug || 'unknown'));
+      setExpandedCollections(slugs);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  const toggleCollection = (slug) => {
+    setExpandedCollections((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+  };
 
   const handleRemoveFavorite = async (opp) => {
     await favoritesApi.remove(opp.id).catch(() => {});
@@ -49,16 +65,52 @@ export default function Favorites() {
     setActionLoading(null);
   };
 
+  // Sort and group by collection
+  const sorted = React.useMemo(() => {
+    const list = [...favorites];
+    if (sort === 'score') list.sort((a, b) => (b.score || 0) - (a.score || 0));
+    else if (sort === 'price') list.sort((a, b) => (a.listingPriceEth || 0) - (b.listingPriceEth || 0));
+    else if (sort === 'profit') list.sort((a, b) => (b.flipEstimate?.profitPct || 0) - (a.flipEstimate?.profitPct || 0));
+    else list.sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0)); // 'saved' — newest first
+    return list;
+  }, [favorites, sort]);
+
+  const grouped = React.useMemo(() => {
+    const map = new Map();
+    for (const opp of sorted) {
+      const slug = opp.collectionSlug || 'unknown';
+      if (!map.has(slug)) {
+        map.set(slug, {
+          slug,
+          name: opp.collectionName || slug,
+          image: opp.collectionImage || null,
+          floorPriceEth: opp.floorPriceEth,
+          listings: [],
+        });
+      }
+      map.get(slug).listings.push(opp);
+    }
+    return Array.from(map.values());
+  }, [sorted]);
+
   return (
     <div style={styles.page}>
       <div style={styles.header}>
         <div>
           <h1 style={styles.h1}>Favorites</h1>
-          <p style={styles.sub}>NFTs you've saved — tied to this session</p>
+          <p style={styles.sub}>Saved to your connected wallet</p>
         </div>
-        {favorites.length > 0 && (
-          <span style={styles.count}>{favorites.length} saved</span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {favorites.length > 0 && (
+            <span style={styles.count}>{favorites.length} saved</span>
+          )}
+          <select style={styles.select} value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="saved">Sort: Date Saved</option>
+            <option value="score">Sort: Score</option>
+            <option value="price">Sort: Price ↑</option>
+            <option value="profit">Sort: Profit %</option>
+          </select>
+        </div>
       </div>
 
       {loading && <div style={styles.empty}>Loading...</div>}
@@ -69,17 +121,53 @@ export default function Favorites() {
         </div>
       )}
 
-      <div style={styles.grid}>
-        {favorites.map((opp) => (
-          <OpportunityCard
-            key={opp.id}
-            opp={opp}
-            onBuy={handleBuy}
-            onBid={handleBidOpen}
-            onFavorite={handleRemoveFavorite}
-            isFavorited={true}
-          />
-        ))}
+      {/* Collection groups */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {grouped.map((group) => {
+          const isExpanded = expandedCollections.has(group.slug);
+          const bestScore = Math.max(...group.listings.map((l) => l.score || 0));
+          const scoreColor = bestScore >= 75 ? '#22c55e' : bestScore >= 50 ? '#eab308' : '#94a3b8';
+          return (
+            <div key={group.slug} style={styles.groupWrapper}>
+              <button style={styles.groupHeader} onClick={() => toggleCollection(group.slug)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                  {group.image && (
+                    <img src={group.image} alt="" style={styles.groupImg}
+                      onError={(e) => { e.target.style.display = 'none'; }} />
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={styles.groupName}>{group.name}</div>
+                    <div style={styles.groupMeta} className="mono">
+                      {group.floorPriceEth ? `Floor ${group.floorPriceEth.toFixed(4)} ETH` : group.slug}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  {bestScore > 0 && (
+                    <span style={{ ...styles.groupBadge, color: scoreColor }}>best {bestScore}</span>
+                  )}
+                  <span style={styles.groupCount}>{group.listings.length} saved</span>
+                  <span style={styles.chevron}>{isExpanded ? '▲' : '▼'}</span>
+                </div>
+              </button>
+
+              {isExpanded && (
+                <div style={styles.grid}>
+                  {group.listings.map((opp) => (
+                    <OpportunityCard
+                      key={opp.id}
+                      opp={opp}
+                      onBuy={handleBuy}
+                      onBid={handleBidOpen}
+                      onFavorite={handleRemoveFavorite}
+                      isFavorited={true}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {bidModal && (
@@ -110,8 +198,17 @@ const styles = {
   h1: { fontSize: 24, fontWeight: 700 },
   sub: { color: '#64748b', fontSize: 13, marginTop: 2 },
   count: { background: '#1e293b', color: '#94a3b8', borderRadius: 8, padding: '4px 12px', fontSize: 13 },
+  select: { padding: '6px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontSize: 13 },
   empty: { color: '#64748b', textAlign: 'center', padding: '48px 0', fontSize: 14 },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 },
+  groupWrapper: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, overflow: 'hidden' },
+  groupHeader: { width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', color: '#f1f5f9', cursor: 'pointer', textAlign: 'left' },
+  groupImg: { width: 36, height: 36, borderRadius: 7, objectFit: 'cover', flexShrink: 0 },
+  groupName: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  groupMeta: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  groupBadge: { fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' },
+  groupCount: { fontSize: 12, color: '#64748b', background: '#1e293b', borderRadius: 6, padding: '2px 8px' },
+  chevron: { fontSize: 10, color: '#64748b' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, padding: '0 16px 16px' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
   modal: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 16, padding: 28, width: 400, display: 'flex', flexDirection: 'column', gap: 14 },
   modalTitle: { fontSize: 18, fontWeight: 700 },
