@@ -1,11 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import OpportunityCard from '../components/OpportunityCard';
-import { botApi, bidsApi, tradesApi, scannerApi } from '../utils/api';
+import { botApi, bidsApi, tradesApi, scannerApi, watchlistApi } from '../utils/api';
 
 export default function Scanner({ opportunities, scanning }) {
   const [searchSlug, setSearchSlug] = useState('');
   const [collectionResult, setCollectionResult] = useState(null);
   const [searching, setSearching] = useState(false);
+  const [watchlist, setWatchlist] = useState([]);
+
+  useEffect(() => {
+    watchlistApi.get().then(setWatchlist).catch(() => {});
+  }, []);
+
+  const isWatched = (slug) => watchlist.some((w) => w.slug === slug);
+
+  const handleToggleWatch = async (slug, name, image) => {
+    if (isWatched(slug)) {
+      await watchlistApi.remove(slug).catch(() => {});
+      setWatchlist((prev) => prev.filter((w) => w.slug !== slug));
+    } else {
+      await watchlistApi.add(slug, name, image).catch(() => {});
+      setWatchlist((prev) => [...prev, { slug, name, imageUrl: image }]);
+    }
+  };
+
+  const handleRemoveWatch = async (slug) => {
+    await watchlistApi.remove(slug).catch(() => {});
+    setWatchlist((prev) => prev.filter((w) => w.slug !== slug));
+  };
   const [sort, setSort] = useState('score');
   const [filter, setFilter] = useState('all');
   const [bidModal, setBidModal] = useState(null);
@@ -113,6 +135,22 @@ export default function Scanner({ opportunities, scanning }) {
         </button>
       </div>
 
+      {/* Watchlist panel */}
+      {watchlist.length > 0 && (
+        <div style={styles.watchlistPanel}>
+          <div style={styles.watchlistTitle}>Sniping ({watchlist.length})</div>
+          <div style={styles.watchlistChips}>
+            {watchlist.map((w) => (
+              <div key={w.slug} style={styles.watchChip}>
+                {w.imageUrl && <img src={w.imageUrl} alt="" style={styles.watchChipImg} onError={(e) => { e.target.style.display = 'none'; }} />}
+                <span style={styles.watchChipName}>{w.name || w.slug}</span>
+                <button style={styles.watchChipRemove} onClick={() => handleRemoveWatch(w.slug)} title="Remove">×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Search single collection */}
       <div style={styles.searchBox}>
         <input
@@ -130,7 +168,13 @@ export default function Scanner({ opportunities, scanning }) {
       {collectionResult && (
         <div style={styles.collectionResult}>
           <div style={styles.crTitle}>
-            {collectionResult.collection?.name || searchSlug} — Floor: {collectionResult.stats?.total?.floor_price?.toFixed(4)} ETH
+            <span>{collectionResult.collection?.name || searchSlug} — Floor: {collectionResult.stats?.total?.floor_price?.toFixed(4)} ETH</span>
+            <button
+              style={isWatched(searchSlug.trim()) ? styles.btnUnwatch : styles.btnWatch}
+              onClick={() => handleToggleWatch(searchSlug.trim(), collectionResult.collection?.name, collectionResult.collection?.image_url)}
+            >
+              {isWatched(searchSlug.trim()) ? '★ Watching' : '☆ Snipe'}
+            </button>
           </div>
           <div style={styles.crGrid}>
             {collectionResult.results?.slice(0, 8).map((r, i) => (
@@ -200,11 +244,18 @@ export default function Scanner({ opportunities, scanning }) {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                   <span style={{ ...styles.groupBadge, color: scoreColor }}>
                     best {bestScore}
                   </span>
                   <span style={styles.groupCount}>{group.listings.length} listing{group.listings.length !== 1 ? 's' : ''}</span>
+                  <button
+                    style={isWatched(group.slug) ? styles.btnGroupUnwatch : styles.btnGroupWatch}
+                    onClick={(e) => { e.stopPropagation(); handleToggleWatch(group.slug, group.name, group.image); }}
+                    title={isWatched(group.slug) ? 'Remove from snipe list' : 'Add to snipe list'}
+                  >
+                    {isWatched(group.slug) ? '★' : '☆'}
+                  </button>
                   <span style={styles.chevron}>{isExpanded ? '▲' : '▼'}</span>
                 </div>
               </button>
@@ -273,7 +324,18 @@ const styles = {
   input: { flex: 1, padding: '9px 14px', borderRadius: 9, border: '1px solid #334155', background: '#1e293b', color: '#f1f5f9', fontSize: 14, outline: 'none' },
   btnSearch: { padding: '9px 18px', borderRadius: 9, border: 'none', background: '#1e293b', color: '#94a3b8', fontWeight: 600, fontSize: 14 },
   collectionResult: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 16 },
-  crTitle: { fontWeight: 600, marginBottom: 10 },
+  crTitle: { fontWeight: 600, marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  watchlistPanel: { background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: '10px 14px' },
+  watchlistTitle: { fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+  watchlistChips: { display: 'flex', flexWrap: 'wrap', gap: 6 },
+  watchChip: { display: 'flex', alignItems: 'center', gap: 6, background: '#1e293b', border: '1px solid #334155', borderRadius: 20, padding: '4px 10px 4px 6px' },
+  watchChipImg: { width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' },
+  watchChipName: { fontSize: 12, color: '#cbd5e1', fontWeight: 500 },
+  watchChipRemove: { background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 },
+  btnWatch: { padding: '4px 12px', borderRadius: 8, border: '1px solid #6366f1', background: 'transparent', color: '#818cf8', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  btnUnwatch: { padding: '4px 12px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  btnGroupWatch: { padding: '3px 8px', borderRadius: 6, border: '1px solid #334155', background: 'transparent', color: '#64748b', fontSize: 13, cursor: 'pointer' },
+  btnGroupUnwatch: { padding: '3px 8px', borderRadius: 6, border: 'none', background: '#6366f1', color: '#fff', fontSize: 13, cursor: 'pointer' },
   crGrid: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   crItem: { background: '#1e293b', borderRadius: 8, padding: '6px 12px', display: 'flex', gap: 10, fontSize: 13 },
   crScore: { color: '#6366f1', fontWeight: 700 },

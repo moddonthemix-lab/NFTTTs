@@ -2,6 +2,7 @@ const openSeaApi = require('./openSeaApi');
 const { scoreOpportunity, estimateFlip, weiToEth } = require('../analyzer/scorer');
 const config = require('../config');
 const logger = require('../utils/logger');
+const db = require('../utils/database');
 
 let _emitter = null;
 
@@ -37,14 +38,36 @@ async function scanForOpportunities() {
     logger.info(`Fetched ${collections.length} trending collections`);
     emit('scan:collections', { count: collections.length, collections: collections.slice(0, 20) });
 
-    // Step 2: For each collection fetch real stats THEN filter.
-    // The trending-collections endpoint does NOT embed stats, so we must
-    // call getCollectionStats first before applying volume/floor filters.
-    for (const col of collections.slice(0, 20)) {
-      try {
-        const slug = col.collection || col.slug;
-        if (!slug) continue;
+    // Step 2: Build the full list of slugs to scan.
+    // - Top 40 trending collections
+    // - All watchlisted collections (always included, bypass volume filter)
+    const watchlist = db.getWatchlist();
+    const watchlistSlugs = new Set(watchlist.map((w) => w.slug));
 
+    const trendingSlugs = collections.slice(0, 40).map((c) => ({
+      slug: c.collection || c.slug,
+      col: c,
+      isWatchlisted: false,
+    })).filter((e) => e.slug);
+
+    // Add watchlist entries not already in trending
+    const scannedSlugs = new Set(trendingSlugs.map((e) => e.slug));
+    for (const w of watchlist) {
+      if (!scannedSlugs.has(w.slug)) {
+        trendingSlugs.push({ slug: w.slug, col: { name: w.name, image_url: w.imageUrl }, isWatchlisted: true });
+      }
+    }
+    // Mark trending entries that are also watchlisted
+    for (const entry of trendingSlugs) {
+      if (watchlistSlugs.has(entry.slug)) entry.isWatchlisted = true;
+    }
+
+    if (watchlist.length > 0) {
+      logger.info(`Watchlist: ${watchlist.map((w) => w.slug).join(', ')}`);
+    }
+
+    for (const { slug, col, isWatchlisted } of trendingSlugs) {
+      try {
         const [stats, listings] = await Promise.all([
           openSeaApi.getCollectionStats(slug),
           openSeaApi.getCheapestListings(slug, 10),
@@ -56,11 +79,11 @@ async function scanForOpportunities() {
         const oneDayInterval = stats.intervals?.find((i) => i.interval === 'one_day') || {};
         const oneDayVolume = oneDayInterval.volume || 0;
 
-        // Apply collection-level filters now that we have real stats
-        if (oneDayVolume < config.scanner.minCollectionVolume) { logger.info(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
+        // Watchlisted collections bypass the volume filter (user pinned them intentionally)
+        if (!isWatchlisted && oneDayVolume < config.scanner.minCollectionVolume) { logger.info(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
         if (floorPrice < config.scanner.minFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} < ${config.scanner.minFloorPrice})`); continue; }
         if (floorPrice > config.scanner.maxFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
-        logger.info(`${slug}: floor=${floorPrice} ETH, vol=${oneDayVolume.toFixed(2)} ETH — scanning ${listings.length} listings`);
+        logger.info(`${slug}${isWatchlisted ? ' [watchlist]' : ''}: floor=${floorPrice} ETH, vol=${oneDayVolume.toFixed(2)} ETH — scanning ${listings.length} listings`);
 
         for (const listing of listings) {
           const listingPriceEth = weiToEth(
@@ -76,8 +99,6 @@ async function scanForOpportunities() {
           const score = scoreOpportunity(listing, stats);
           const flipEstimate = estimateFlip(listingPriceEth, floorPrice);
 
-          // Only hard-filter truly junk scores; profitability is shown in the UI
-          // as a label so the user can decide — not used as a gate here.
           if (score < 10) continue;
 
           const tokenId = listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria
@@ -102,12 +123,13 @@ async function scanForOpportunities() {
             oneDayVolume,
             oneDaySales: oneDayInterval.sales || 0,
             oneDayChange: oneDayInterval.volume_change || 0,
+            isWatchlisted,
             listing,
             scannedAt: new Date().toISOString(),
           });
         }
       } catch (err) {
-        logger.warn(`Error scanning collection ${col.collection || col.slug}: ${err.message}`);
+        logger.warn(`Error scanning collection ${slug}: ${err.message}`);
       }
     }
 
