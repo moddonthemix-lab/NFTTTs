@@ -4,12 +4,21 @@ const logger = require('../utils/logger');
 
 const api = axios.create({
   baseURL: config.opensea.apiBase,
-  headers: {
-    'X-API-KEY': config.opensea.apiKey,
-    'Accept': 'application/json',
-  },
+  headers: { 'Accept': 'application/json' },
   timeout: 15000,
 });
+
+// Read the key at request time so Railway env vars are always picked up.
+// This avoids the key being baked in as '' if the env isn't ready at module-load time.
+api.interceptors.request.use((reqConfig) => {
+  const key = process.env.OPENSEA_API_KEY || config.opensea.apiKey;
+  if (key) reqConfig.headers['X-API-KEY'] = key;
+  return reqConfig;
+});
+
+// Startup diagnostic — shows in Railway logs
+const _keyPreview = (process.env.OPENSEA_API_KEY || '').slice(0, 6);
+logger.info(`OpenSea API key: ${_keyPreview ? `${_keyPreview}… (loaded)` : 'NOT SET — add OPENSEA_API_KEY in Railway Variables'}`);
 
 // Simple rate-limit helper: max 4 req/sec for free tier
 let lastCallTime = 0;
