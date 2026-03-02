@@ -87,6 +87,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
 
   const [sort, setSort] = useState('score');
   const [filter, setFilter] = useState('all');
+  const [chainTab, setChainTab] = useState('all'); // 'all' | 'ethereum' | 'base'
   const [bidModal, setBidModal] = useState(null);
   const [bidAmount, setBidAmount] = useState('');
   const [bidHours, setBidHours] = useState(24);
@@ -105,16 +106,20 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
 
   const sorted = React.useMemo(() => {
     let list = [...(opportunities || [])];
+    // Chain filter
+    if (chainTab === 'ethereum') list = list.filter((o) => (o.chain || 'ethereum') === 'ethereum');
+    if (chainTab === 'base') list = list.filter((o) => o.chain === 'base');
+    // Opportunity filter
     if (filter === 'profitable') list = list.filter((o) => o.flipEstimate?.isProfitable);
     if (filter === 'highscore') list = list.filter((o) => o.score >= 70);
     if (sort === 'score') list.sort((a, b) => b.score - a.score);
     else if (sort === 'price') list.sort((a, b) => a.listingPriceEth - b.listingPriceEth);
     else if (sort === 'profit') list.sort((a, b) => (b.flipEstimate?.profitPct || 0) - (a.flipEstimate?.profitPct || 0));
     return list;
-  }, [opportunities, sort, filter]);
+  }, [opportunities, sort, filter, chainTab]);
 
-  // Reset page when filter/sort changes
-  React.useEffect(() => setPage(0), [opportunities, filter, sort]);
+  // Reset page when filter/sort/chain changes
+  React.useEffect(() => setPage(0), [opportunities, filter, sort, chainTab]);
 
   // Group sorted listings by collection, preserving inter-collection order by best score
   const grouped = React.useMemo(() => {
@@ -128,6 +133,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
           image: opp.collectionImage,
           floorPriceEth: opp.floorPriceEth,
           oneDayVolume: opp.oneDayVolume,
+          chain: opp.chain || 'ethereum',
           listings: [],
         });
       }
@@ -349,16 +355,29 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
 
       {/* Filters */}
       <div style={styles.filterRow}>
-        <div style={styles.filterGroup}>
-          {['all', 'profitable', 'highscore'].map((f) => (
-            <button
-              key={f}
-              style={{ ...styles.filterBtn, ...(filter === f ? styles.filterActive : {}) }}
-              onClick={() => setFilter(f)}
-            >
-              {f === 'all' ? 'All' : f === 'profitable' ? 'Profitable' : 'High Score'}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={styles.filterGroup}>
+            {[{ key: 'all', label: 'All' }, { key: 'ethereum', label: 'ETH' }, { key: 'base', label: 'BASE' }].map(({ key, label }) => (
+              <button
+                key={key}
+                style={{ ...styles.filterBtn, ...(chainTab === key ? styles.filterActive : {}) }}
+                onClick={() => setChainTab(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div style={styles.filterGroup}>
+            {['all', 'profitable', 'highscore'].map((f) => (
+              <button
+                key={f}
+                style={{ ...styles.filterBtn, ...(filter === f ? styles.filterActive : {}) }}
+                onClick={() => setFilter(f)}
+              >
+                {f === 'all' ? 'All' : f === 'profitable' ? 'Profitable' : 'High Score'}
+              </button>
+            ))}
+          </div>
         </div>
         <select style={styles.select} value={sort} onChange={(e) => setSort(e.target.value)}>
           <option value="score">Sort: Score</option>
@@ -395,7 +414,10 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                       onError={(e) => { e.target.style.display = 'none'; }} />
                   )}
                   <div style={{ minWidth: 0 }}>
-                    <div style={styles.groupName}>{group.name}</div>
+                    <div style={styles.groupName}>
+                      {group.name}
+                      {group.chain === 'base' && <span style={styles.chainBadge}>BASE</span>}
+                    </div>
                     <div style={styles.groupMeta} className="mono">
                       Floor {group.floorPriceEth?.toFixed(4)} ETH
                       {ethPrice && group.floorPriceEth ? ` (${fmtUsd(group.floorPriceEth, ethPrice)})` : ''}
@@ -598,6 +620,7 @@ const styles = {
   groupName: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   groupMeta: { fontSize: 11, color: '#64748b', marginTop: 2 },
   groupBadge: { fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' },
+  chainBadge: { display: 'inline-block', marginLeft: 6, padding: '1px 6px', borderRadius: 4, background: '#1e3a5f', color: '#60a5fa', fontSize: 9, fontWeight: 700, letterSpacing: 0.5, verticalAlign: 'middle' },
   groupCount: { fontSize: 12, color: '#64748b', background: '#1e293b', borderRadius: 6, padding: '2px 8px' },
   chevron: { fontSize: 10, color: '#64748b' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, padding: '0 16px 16px' },

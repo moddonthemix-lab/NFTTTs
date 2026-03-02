@@ -34,28 +34,36 @@ async function scanForOpportunities() {
   const opportunities = [];
 
   try {
-    // Step 1: Get trending collections
-    const collections = await openSeaApi.getTrendingCollections(60);
-    logger.info(`Fetched ${collections.length} trending collections`);
-    emit('scan:collections', { count: collections.length, collections: collections.slice(0, 20) });
+    // Step 1: Fetch trending from both Ethereum and Base in parallel.
+    // ETH: top 40, Base: top 20 (Base has fewer active collections).
+    const [ethCollections, baseCollections] = await Promise.allSettled([
+      openSeaApi.getTrendingCollections(40, 'ethereum'),
+      openSeaApi.getTrendingCollections(20, 'base'),
+    ]);
+
+    const ethList = ethCollections.status === 'fulfilled' ? ethCollections.value : [];
+    const baseList = baseCollections.status === 'fulfilled' ? baseCollections.value : [];
+
+    logger.info(`Fetched ${ethList.length} ETH + ${baseList.length} Base trending collections`);
+    const allCollections = [...ethList, ...baseList];
+    emit('scan:collections', { count: allCollections.length, collections: allCollections.slice(0, 20) });
 
     // Step 2: Build the full list of slugs to scan.
-    // - Top 60 trending collections
+    // - Top 40 ETH + top 20 Base trending collections
     // - All watchlisted collections (always included, bypass volume filter)
     const watchlist = db.getWatchlist(walletUtils.getWalletAddress());
     const watchlistSlugs = new Set(watchlist.map((w) => w.slug));
 
-    const trendingSlugs = collections.slice(0, 60).map((c) => ({
-      slug: c.collection || c.slug,
-      col: c,
-      isWatchlisted: false,
-    })).filter((e) => e.slug);
+    const trendingSlugs = [
+      ...ethList.map((c) => ({ slug: c.collection || c.slug, col: c, isWatchlisted: false, chain: 'ethereum' })),
+      ...baseList.map((c) => ({ slug: c.collection || c.slug, col: c, isWatchlisted: false, chain: 'base' })),
+    ].filter((e) => e.slug);
 
     // Add watchlist entries not already in trending
     const scannedSlugs = new Set(trendingSlugs.map((e) => e.slug));
     for (const w of watchlist) {
       if (!scannedSlugs.has(w.slug)) {
-        trendingSlugs.push({ slug: w.slug, col: { name: w.name, image_url: w.imageUrl }, isWatchlisted: true });
+        trendingSlugs.push({ slug: w.slug, col: { name: w.name, image_url: w.imageUrl }, isWatchlisted: true, chain: w.chain || 'ethereum' });
       }
     }
     // Mark trending entries that are also watchlisted
@@ -67,7 +75,7 @@ async function scanForOpportunities() {
       logger.info(`Watchlist: ${watchlist.map((w) => w.slug).join(', ')}`);
     }
 
-    for (const { slug, col, isWatchlisted } of trendingSlugs) {
+    for (const { slug, col, isWatchlisted, chain } of trendingSlugs) {
       try {
         const [stats, listings] = await Promise.all([
           openSeaApi.getCollectionStats(slug),
@@ -90,7 +98,7 @@ async function scanForOpportunities() {
         if (!isWatchlisted && oneDayVolume < config.scanner.minCollectionVolume) { logger.info(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
         if (floorPrice < config.scanner.minFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} < ${config.scanner.minFloorPrice})`); continue; }
         if (floorPrice > config.scanner.maxFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
-        logger.info(`${slug}${isWatchlisted ? ' [watchlist]' : ''}: floor=${floorPrice} ETH, vol=${oneDayVolume.toFixed(2)} ETH — scanning ${listings.length} listings`);
+        logger.info(`${slug} [${chain}]${isWatchlisted ? ' [watchlist]' : ''}: floor=${floorPrice} ETH, vol=${oneDayVolume.toFixed(2)} ETH — scanning ${listings.length} listings`);
 
         for (const listing of listings) {
           const listingPriceEth = weiToEth(
@@ -123,6 +131,7 @@ async function scanForOpportunities() {
             collectionImage: col.image_url || '',
             contractAddress,
             tokenId,
+            chain: chain || 'ethereum',
             listingPriceEth,
             floorPriceEth: floorPrice,
             avgSalePriceEth: avgSalePrice,

@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { whaleApi } from '../utils/api';
 
-export default function WhaleTracker() {
+const fmtUsd = (eth, price) => {
+  if (!price || !eth) return null;
+  const usd = eth * price;
+  return usd >= 1000 ? `≈ $${Math.round(usd).toLocaleString()}` : `≈ $${usd.toFixed(2)}`;
+};
+
+export default function WhaleTracker({ ethPrice }) {
   const [whales, setWhales] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [input, setInput] = useState('');
@@ -138,7 +144,7 @@ export default function WhaleTracker() {
                           <span style={styles.whaleMeta}>
                             {whale.label ? ' · ' : ''}
                             {data.totalNfts} NFTs
-                            {data.netValueEth > 0 ? ` · ~${fmt(data.netValueEth)} ETH` : ''}
+                            {data.netValueEth > 0 ? ` · ~${fmt(data.netValueEth)} ETH${ethPrice ? ` (${fmtUsd(data.netValueEth, ethPrice)})` : ''}` : ''}
                           </span>
                         )}
                       </div>
@@ -175,6 +181,9 @@ export default function WhaleTracker() {
                           <span style={{ ...styles.summaryVal, color: '#22c55e' }}>
                             {data.netValueEth > 0 ? `~${fmt(data.netValueEth)} ETH` : '—'}
                           </span>
+                          {data.netValueEth > 0 && ethPrice && (
+                            <span style={styles.summaryUsd}>{fmtUsd(data.netValueEth, ethPrice)}</span>
+                          )}
                         </div>
                         {data.totalNfts >= 200 && (
                           <div style={styles.truncNote}>Showing first 200 NFTs</div>
@@ -200,13 +209,18 @@ export default function WhaleTracker() {
                                   <div style={{ minWidth: 0 }}>
                                     <div style={styles.colName}>{col.name || col.slug}</div>
                                     <div style={styles.colMeta} className="mono">
-                                      {col.floorPriceEth ? `Floor ${fmt(col.floorPriceEth)} ETH` : col.slug}
+                                      {col.floorPriceEth
+                                        ? `Floor ${fmt(col.floorPriceEth)} ETH${ethPrice ? ` (${fmtUsd(col.floorPriceEth, ethPrice)})` : ''}`
+                                        : col.slug}
                                     </div>
                                   </div>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                                   {estVal && (
-                                    <span style={styles.estVal}>~{fmt(estVal)} ETH</span>
+                                    <span style={styles.estVal}>
+                                      ~{fmt(estVal)} ETH
+                                      {ethPrice && <span style={styles.estValUsd}> ({fmtUsd(estVal, ethPrice)})</span>}
+                                    </span>
                                   )}
                                   <span style={styles.colCount}>{col.nfts.length} NFT{col.nfts.length !== 1 ? 's' : ''}</span>
                                   <span style={styles.chevronSm}>{colOpen ? '▲' : '▼'}</span>
@@ -291,6 +305,8 @@ const styles = {
   colMeta: { fontSize: 11, color: '#64748b', marginTop: 1 },
   colCount: { fontSize: 12, color: '#64748b', background: '#1e293b', borderRadius: 5, padding: '2px 7px' },
   estVal: { fontSize: 12, color: '#22c55e', fontWeight: 600 },
+  estValUsd: { color: '#475569', fontWeight: 400 },
+  summaryUsd: { fontSize: 11, color: '#475569', marginTop: 2 },
   // NFT grid
   nftGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: 8, padding: '10px 14px 14px' },
   nftCard: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, textDecoration: 'none', cursor: 'pointer' },

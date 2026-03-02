@@ -29,13 +29,25 @@ async function rateLimitedCall(fn) {
   return fn();
 }
 
-// --- ETH/USD price (CoinGecko public API, cached 5 min) ---
+// --- ETH/USD price (Binance primary, CoinGecko fallback, cached 5 min) ---
 let _ethPriceUsd = null;
 let _ethPriceAt = 0;
 
 async function getEthPriceUsd() {
   const now = Date.now();
   if (_ethPriceUsd && now - _ethPriceAt < 5 * 60 * 1000) return _ethPriceUsd;
+
+  // Binance public API — no key, very reliable
+  try {
+    const r = await axios.get(
+      'https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT',
+      { timeout: 4000 }
+    );
+    const price = parseFloat(r.data?.price);
+    if (price > 0) { _ethPriceUsd = price; _ethPriceAt = now; return _ethPriceUsd; }
+  } catch { /* fall through to backup */ }
+
+  // CoinGecko fallback
   try {
     const r = await axios.get(
       'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
@@ -43,25 +55,25 @@ async function getEthPriceUsd() {
     );
     const price = r.data?.ethereum?.usd;
     if (price) { _ethPriceUsd = price; _ethPriceAt = now; }
-  } catch {
-    // keep stale value on failure — better than null
-  }
+  } catch { /* keep stale value */ }
+
   return _ethPriceUsd;
 }
 
 /**
  * Fetch trending / high-volume collections.
+ * chain: 'ethereum' (default) or 'base'
  * OpenSea free tier caps each page at 20 results regardless of `limit`,
  * so we paginate using the `next` cursor until we have enough.
  */
-async function getTrendingCollections(limit = 60) {
+async function getTrendingCollections(limit = 60, chain = 'ethereum') {
   const collected = [];
   const seen = new Set();
   let cursor = null;
 
   while (collected.length < limit) {
     try {
-      const params = { chain: 'ethereum', limit: 20, order_by: 'one_day_volume' };
+      const params = { chain, limit: 20, order_by: 'one_day_volume' };
       if (cursor) params.next = cursor;
       const res = await rateLimitedCall(() => api.get('/collections', { params }));
       const items = res.data.collections || [];
@@ -74,7 +86,7 @@ async function getTrendingCollections(limit = 60) {
     } catch (err) {
       const status = err.response?.status;
       const detail = err.response?.data?.errors?.[0] || err.response?.data?.detail || err.response?.data || err.message;
-      logger.error(`OpenSea getTrendingCollections error ${status || 'network'}: ${JSON.stringify(detail)}`);
+      logger.error(`OpenSea getTrendingCollections(${chain}) error ${status || 'network'}: ${JSON.stringify(detail)}`);
       throw new Error(`OpenSea API error ${status || 'network'}: ${JSON.stringify(detail)}`);
     }
   }

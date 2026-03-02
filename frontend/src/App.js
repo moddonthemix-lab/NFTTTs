@@ -95,7 +95,7 @@ function AppInner() {
               path="/logs"
               element={<Logs logs={logs} />}
             />
-            <Route path="/whales" element={<WhaleTracker />} />
+            <Route path="/whales" element={<WhaleTracker ethPrice={ethPrice} />} />
           </Routes>
         </main>
       </div>
