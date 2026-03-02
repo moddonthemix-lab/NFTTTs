@@ -56,9 +56,9 @@ async function scanForOpportunities() {
         const oneDayVolume = stats.total?.one_day_volume || 0;
 
         // Apply collection-level filters now that we have real stats
-        if (oneDayVolume < config.scanner.minCollectionVolume) { logger.debug(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
-        if (floorPrice < config.scanner.minFloorPrice) { logger.debug(`${slug}: skipped (floor ${floorPrice} < ${config.scanner.minFloorPrice})`); continue; }
-        if (floorPrice > config.scanner.maxFloorPrice) { logger.debug(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
+        if (oneDayVolume < config.scanner.minCollectionVolume) { logger.info(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
+        if (floorPrice < config.scanner.minFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} < ${config.scanner.minFloorPrice})`); continue; }
+        if (floorPrice > config.scanner.maxFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
         logger.info(`${slug}: floor=${floorPrice} ETH, vol=${oneDayVolume.toFixed(2)} ETH — scanning ${listings.length} listings`);
 
         for (const listing of listings) {
@@ -67,7 +67,10 @@ async function scanForOpportunities() {
             listing.price?.current?.decimals
           );
 
-          if (listingPriceEth <= 0 || listingPriceEth > config.trading.maxBuyPriceEth) continue;
+          if (listingPriceEth <= 0 || listingPriceEth > config.trading.maxBuyPriceEth) {
+            if (listingPriceEth > 0) logger.info(`${slug}: listing ${listingPriceEth.toFixed(4)} ETH rejected (maxBuyPrice=${config.trading.maxBuyPriceEth} ETH)`);
+            continue;
+          }
 
           const score = scoreOpportunity(listing, stats);
           const flipEstimate = estimateFlip(listingPriceEth, floorPrice);
