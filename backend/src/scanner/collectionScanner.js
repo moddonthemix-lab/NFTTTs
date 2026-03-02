@@ -34,14 +34,6 @@ async function scanForOpportunities() {
   try {
     // Step 1: Get trending collections
     const collections = await openSeaApi.getTrendingCollections(60);
-
-    if (collections.length === 0) {
-      const msg = 'OpenSea returned 0 collections — API key may be invalid or rate-limited. Check your OPENSEA_API_KEY.';
-      logger.error(msg);
-      emit('scan:error', { message: msg });
-      return [];
-    }
-
     logger.info(`Fetched ${collections.length} trending collections`);
     emit('scan:collections', { count: collections.length, collections: collections.slice(0, 20) });
 

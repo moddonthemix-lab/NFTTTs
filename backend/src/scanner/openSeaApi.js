@@ -36,8 +36,11 @@ async function getTrendingCollections(limit = 50) {
       });
       return res.data.collections || [];
     } catch (err) {
-      logger.error(`OpenSea getTrendingCollections error: ${err.message}`);
-      return [];
+      const status = err.response?.status;
+      const detail = err.response?.data?.errors?.[0] || err.response?.data?.detail || err.response?.data || err.message;
+      logger.error(`OpenSea getTrendingCollections error ${status || 'network'}: ${JSON.stringify(detail)}`);
+      // Re-throw with a descriptive message so the scanner can surface it
+      throw new Error(`OpenSea API error ${status || 'network'}: ${JSON.stringify(detail)}`);
     }
   });
 }
