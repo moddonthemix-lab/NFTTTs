@@ -24,11 +24,27 @@ async function scanForOpportunities() {
   logger.info('Starting NFT opportunity scan...');
   emit('scan:started', { timestamp: new Date().toISOString() });
 
+  // Fail fast with a clear message if the API key is missing
+  if (!config.opensea.apiKey) {
+    const msg = 'OPENSEA_API_KEY is not configured. Add it to your environment variables (Railway → Variables).';
+    logger.error(msg);
+    emit('scan:error', { message: msg });
+    return [];
+  }
+
   const opportunities = [];
 
   try {
     // Step 1: Get trending collections
     const collections = await openSeaApi.getTrendingCollections(60);
+
+    if (collections.length === 0) {
+      const msg = 'OpenSea returned 0 collections — API key may be invalid or rate-limited. Check your OPENSEA_API_KEY.';
+      logger.error(msg);
+      emit('scan:error', { message: msg });
+      return [];
+    }
+
     logger.info(`Fetched ${collections.length} trending collections`);
     emit('scan:collections', { count: collections.length, collections: collections.slice(0, 20) });
 
