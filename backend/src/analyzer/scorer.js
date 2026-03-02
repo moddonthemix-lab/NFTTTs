@@ -3,6 +3,11 @@ const config = require('../config');
 /**
  * Score an NFT opportunity on a scale of 0–100.
  * Higher = better flip opportunity.
+ *
+ * Key fix: discount is measured vs average SALE price, not floor.
+ * Floor is the cheapest ask — a listing AT floor has zero discount vs floor.
+ * Average sale price is what buyers are actually paying (always above floor),
+ * so a listing at floor is genuinely discounted vs that benchmark.
  */
 function scoreOpportunity(listing, collectionStats) {
   if (!listing || !collectionStats) return 0;
@@ -10,6 +15,7 @@ function scoreOpportunity(listing, collectionStats) {
   const floorPrice = collectionStats.total?.floor_price || 0;
   const listingPriceEth = weiToEth(listing.price?.current?.value, listing.price?.current?.decimals);
   const oneDayInterval = collectionStats.intervals?.find((i) => i.interval === 'one_day') || {};
+  const sevenDayInterval = collectionStats.intervals?.find((i) => i.interval === 'seven_day') || {};
   const oneDayVolume = oneDayInterval.volume || 0;
   const oneDaySales = oneDayInterval.sales || 0;
   const oneDayChange = oneDayInterval.volume_change || 0;
@@ -18,18 +24,25 @@ function scoreOpportunity(listing, collectionStats) {
 
   if (listingPriceEth === 0 || floorPrice === 0) return 0;
 
+  // Reference = what buyers are actually paying.
+  // Prefer 1-day avg, fall back to 7-day avg, last resort floor.
+  const avgSalePrice =
+    oneDayInterval.average_price ||
+    sevenDayInterval.average_price ||
+    floorPrice;
+
   let score = 0;
 
-  // 1. Price discount vs floor (max 40 pts)
-  const discount = (floorPrice - listingPriceEth) / floorPrice;
+  // 1. Discount vs avg sale price (max 40 pts)
+  // e.g. listing at floor (0.5 ETH) while avg sale is 0.65 ETH → 23% below avg → ~46 pts (capped 40)
+  const discount = (avgSalePrice - listingPriceEth) / avgSalePrice;
   if (discount > 0) {
-    score += Math.min(40, discount * 200); // 20% discount = 40 pts
+    score += Math.min(40, discount * 200); // 20% below avg sale = 40 pts
   }
 
   // 2. 24h volume strength (max 20 pts)
   if (oneDayVolume > 0) {
-    const volScore = Math.min(20, Math.log10(oneDayVolume + 1) * 8);
-    score += volScore;
+    score += Math.min(20, Math.log10(oneDayVolume + 1) * 8);
   }
 
   // 3. Price momentum (24h change) (max 15 pts)
@@ -52,16 +65,21 @@ function scoreOpportunity(listing, collectionStats) {
 }
 
 /**
- * Calculate estimated profit for a potential flip
+ * Estimate flip profitability.
+ *
+ * targetSellEth = the realistic exit price.
+ * - For buy decisions: pass avg sale price (what buyers are paying).
+ * - For sell decisions on held NFTs: pass your intended list price (floor × 0.98).
+ * Never pass raw floor price — selling at floor nets a ~7.5% loss after fees.
  */
-function estimateFlip(buyPriceEth, floorPriceEth, marketplaceFeePct = 2.5, royaltyPct = 5) {
+function estimateFlip(buyPriceEth, targetSellEth, marketplaceFeePct = 2.5, royaltyPct = 5) {
   const totalFeePct = (marketplaceFeePct + royaltyPct) / 100;
-  const sellPriceNet = floorPriceEth * (1 - totalFeePct);
+  const sellPriceNet = targetSellEth * (1 - totalFeePct);
   const profitEth = sellPriceNet - buyPriceEth;
   const profitPct = (profitEth / buyPriceEth) * 100;
   return {
     buyPriceEth,
-    targetSellEth: floorPriceEth,
+    targetSellEth,
     netSellEth: parseFloat(sellPriceNet.toFixed(6)),
     profitEth: parseFloat(profitEth.toFixed(6)),
     profitPct: parseFloat(profitPct.toFixed(2)),

@@ -78,7 +78,13 @@ async function scanForOpportunities() {
 
         const floorPrice = stats.total?.floor_price || 0;
         const oneDayInterval = stats.intervals?.find((i) => i.interval === 'one_day') || {};
+        const sevenDayInterval = stats.intervals?.find((i) => i.interval === 'seven_day') || {};
         const oneDayVolume = oneDayInterval.volume || 0;
+        // Realistic exit = avg sale price (what buyers pay), not floor (cheapest ask)
+        const avgSalePrice =
+          oneDayInterval.average_price ||
+          sevenDayInterval.average_price ||
+          floorPrice;
 
         // Watchlisted collections bypass the volume filter (user pinned them intentionally)
         if (!isWatchlisted && oneDayVolume < config.scanner.minCollectionVolume) { logger.info(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
@@ -98,7 +104,7 @@ async function scanForOpportunities() {
           }
 
           const score = scoreOpportunity(listing, stats);
-          const flipEstimate = estimateFlip(listingPriceEth, floorPrice);
+          const flipEstimate = estimateFlip(listingPriceEth, avgSalePrice);
 
           if (score < 10) continue;
 
@@ -119,6 +125,7 @@ async function scanForOpportunities() {
             tokenId,
             listingPriceEth,
             floorPriceEth: floorPrice,
+            avgSalePriceEth: avgSalePrice,
             score,
             flipEstimate,
             oneDayVolume,
@@ -162,6 +169,9 @@ async function scanCollection(slug) {
     if (!stats) return null;
 
     const floorPrice = stats.total?.floor_price || 0;
+    const oneDayInt = stats.intervals?.find((i) => i.interval === 'one_day') || {};
+    const sevenDayInt = stats.intervals?.find((i) => i.interval === 'seven_day') || {};
+    const avgSalePrice = oneDayInt.average_price || sevenDayInt.average_price || floorPrice;
     const results = listings
       .map((listing) => {
         const priceEth = weiToEth(
@@ -169,7 +179,7 @@ async function scanCollection(slug) {
           listing.price?.current?.decimals
         );
         const score = scoreOpportunity(listing, stats);
-        const flipEstimate = estimateFlip(priceEth, floorPrice);
+        const flipEstimate = estimateFlip(priceEth, avgSalePrice);
         return { listing, priceEth, score, flipEstimate };
       })
       .filter((r) => r.score > 0)

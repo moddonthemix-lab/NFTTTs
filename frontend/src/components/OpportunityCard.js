@@ -40,11 +40,16 @@ export default function OpportunityCard({ opp, onBuy, onBid, onFavorite, isFavor
 
       <div style={styles.grid}>
         <Metric label="List Price" value={`${opp.listingPriceEth?.toFixed(4)} ETH`} />
-        <Metric label="Floor" value={`${opp.floorPriceEth?.toFixed(4)} ETH`} />
+        <Metric
+          label={opp.avgSalePriceEth ? 'Avg Sale' : 'Floor'}
+          value={`${(opp.avgSalePriceEth || opp.floorPriceEth)?.toFixed(4)} ETH`}
+          hint={opp.avgSalePriceEth ? 'Avg 24h sale — realistic exit price' : 'Floor price (no recent sales data)'}
+        />
         <Metric
           label="Est. Profit"
           value={`${profitPct > 0 ? '+' : ''}${profitPct?.toFixed(1)}%`}
           color={isProfitable ? '#22c55e' : '#94a3b8'}
+          hint="If sold at avg sale price, after 7.5% fees"
         />
         <Metric label="24h Vol" value={`${(opp.oneDayVolume || 0).toFixed(2)} ETH`} />
       </div>
@@ -61,9 +66,9 @@ export default function OpportunityCard({ opp, onBuy, onBid, onFavorite, isFavor
   );
 }
 
-function Metric({ label, value, color }) {
+function Metric({ label, value, color, hint }) {
   return (
-    <div style={styles.metric}>
+    <div style={styles.metric} title={hint}>
       <div style={styles.metricLabel}>{label}</div>
       <div style={{ ...styles.metricValue, color: color || '#f1f5f9' }} className="mono">{value}</div>
     </div>

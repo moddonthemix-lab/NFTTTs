@@ -143,10 +143,12 @@ async function evaluateSells(portfolio, currentBalanceEth) {
 
       const currentFloor = stats.total?.floor_price || 0;
       const buyPrice = nft.buyPriceEth || 0;
-      const flip = estimateFlip(buyPrice, currentFloor);
+      // Evaluate against the price we'll actually list at (0.98× floor = undercut by 2%)
+      // rather than raw floor — we can't sell AT floor without being tied for cheapest.
+      const sellPrice = parseFloat((currentFloor * 0.98).toFixed(6));
+      const flip = estimateFlip(buyPrice, sellPrice);
 
-      if (flip.isProfitable && flip.profitPct >= config.trading.minProfitMargin * 100) {
-        const sellPrice = parseFloat((currentFloor * 0.98).toFixed(6)); // undercut floor slightly for fast sell
+      if (flip.isProfitable) {
         if (config.autoTrade) {
           await executeSell(nft, sellPrice, flip.profitEth);
         } else {
