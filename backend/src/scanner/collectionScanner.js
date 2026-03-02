@@ -24,12 +24,9 @@ async function scanForOpportunities() {
   logger.info('Starting NFT opportunity scan...');
   emit('scan:started', { timestamp: new Date().toISOString() });
 
-  // Fail fast with a clear message if the API key is missing
+  // Warn if the API key looks missing, but still attempt the scan
   if (!config.opensea.apiKey) {
-    const msg = 'OPENSEA_API_KEY is not configured. Add it to your environment variables (Railway → Variables).';
-    logger.error(msg);
-    emit('scan:error', { message: msg });
-    return [];
+    logger.warn('OPENSEA_API_KEY is not set — scan will likely fail. Add it in Railway → Variables and redeploy.');
   }
 
   const opportunities = [];
