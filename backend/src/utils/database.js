@@ -98,6 +98,12 @@ function removeBid(tokenId, contractAddress) {
   writeDb(db);
 }
 
+function removeBidByOrderHash(orderHash) {
+  const db = readDb();
+  db.bids = db.bids.filter((b) => b.orderHash !== orderHash);
+  writeDb(db);
+}
+
 function addPendingApproval(approval) {
   const db = readDb();
   const id = `approval_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
@@ -145,6 +151,7 @@ module.exports = {
   addTrade,
   addBid,
   removeBid,
+  removeBidByOrderHash,
   addPendingApproval,
   updateApproval,
   addToWatchlist,

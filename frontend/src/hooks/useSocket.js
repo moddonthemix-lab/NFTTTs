@@ -31,7 +31,11 @@ export function useSocket() {
   }, []);
 
   useEffect(() => {
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+    const pw = sessionStorage.getItem('nftbot_auth') || '';
+    const socket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      auth: { token: pw },
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
@@ -87,6 +91,10 @@ export function useSocket() {
       setBids((prev) => [...prev, d]);
     });
     socket.on('trade:error', (d) => addLog('error', `Trade error (${d.action}): ${d.error}`));
+    socket.on('trade:bid_filled', (d) => {
+      addLog('success', `Bid filled! ${d.collectionSlug} #${d.tokenId} acquired @ ${d.offerAmountEth} ETH`);
+      // portfolio update arrives via next bot cycle; no optimistic insert needed
+    });
 
     // Wallet
     socket.on('wallet:connected', (d) => {

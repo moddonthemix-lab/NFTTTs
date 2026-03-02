@@ -7,6 +7,28 @@ const logger = require('../utils/logger');
 // Seaport v1.6 contract address (mainnet)
 const SEAPORT_ADDRESS = '0x0000000000000068F116a894984e2DB1123eB395';
 
+const TX_CONFIRM_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Wait for a transaction to be confirmed with a hard timeout.
+ * Throws if the tx reverts (status 0) or if confirmation takes > 5 minutes.
+ */
+async function waitForConfirmation(tx) {
+  const receipt = await Promise.race([
+    tx.wait(1),
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`TX ${tx.hash} not confirmed within 5 minutes — check on-chain manually`)),
+        TX_CONFIRM_TIMEOUT_MS
+      )
+    ),
+  ]);
+  if (receipt.status === 0) {
+    throw new Error(`Transaction ${tx.hash} reverted on-chain (status 0)`);
+  }
+  return receipt;
+}
+
 // WETH address on mainnet (used for bidding)
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 
@@ -42,7 +64,7 @@ async function buyNFT(listing) {
   });
 
   logger.info(`Buy TX sent: ${tx.hash}`);
-  const receipt = await tx.wait();
+  const receipt = await waitForConfirmation(tx);
   logger.info(`Buy TX confirmed: ${receipt.hash} (block ${receipt.blockNumber})`);
 
   return {
@@ -257,7 +279,7 @@ async function ensureWETH(wallet, amountWei) {
     const needed = amountWei - balance;
     logger.info(`Wrapping ${ethers.formatEther(needed)} ETH to WETH for bid`);
     const tx = await weth.deposit({ value: needed });
-    await tx.wait();
+    await waitForConfirmation(tx);
     logger.info('WETH wrap confirmed');
   }
 }
@@ -268,7 +290,7 @@ async function approveWETH(wallet, amountWei) {
   if (allowance < amountWei) {
     logger.info('Approving WETH for Seaport...');
     const tx = await weth.approve(SEAPORT_ADDRESS, ethers.MaxUint256);
-    await tx.wait();
+    await waitForConfirmation(tx);
     logger.info('WETH approved for Seaport');
   }
 }

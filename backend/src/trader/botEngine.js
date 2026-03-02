@@ -3,6 +3,7 @@ const { scanForOpportunities } = require('../scanner/collectionScanner');
 const { buyNFT, placeBid, sellNFT } = require('./seaportTrader');
 const { estimateFlip, calcBidPrice } = require('../analyzer/scorer');
 const db = require('../utils/database');
+const { getNFTsByOwner } = require('../scanner/openSeaApi');
 const walletUtils = require('../utils/wallet');
 const config = require('../config');
 const logger = require('../utils/logger');
@@ -161,13 +162,79 @@ async function evaluateSells(portfolio, currentBalanceEth) {
 async function manageBids() {
   const bids = db.getBids();
   const now = Date.now();
+
+  // Check if any bids were filled (NFT now in wallet but not yet in portfolio)
+  if (bids.length > 0 && walletUtils.isConnected()) {
+    await detectBidFills(bids);
+  }
+
+  // Remove bids older than 23 hours (expired on OpenSea)
   for (const bid of bids) {
     const ageHours = (now - new Date(bid.placedAt).getTime()) / 3600000;
     if (ageHours > 23) {
-      // Refresh bid
-      db.removeBid(bid.tokenId, bid.contractAddress);
+      db.removeBidByOrderHash(bid.orderHash);
       logger.info(`Removed stale bid on ${bid.collectionSlug}`);
     }
+  }
+}
+
+/**
+ * Detect filled bids by comparing on-chain wallet NFTs against portfolio.
+ * Any NFT we own that matches a bid collection but isn't in portfolio = bid fill.
+ */
+async function detectBidFills(bids) {
+  try {
+    const walletAddress = walletUtils.getWallet().address;
+    const { nfts } = await getNFTsByOwner(walletAddress, 50);
+
+    const portfolio = db.getPortfolio();
+    const portfolioKeys = new Set(
+      portfolio.map((n) => `${n.contractAddress?.toLowerCase()}-${n.tokenId}`)
+    );
+    const bidSlugs = new Set(bids.map((b) => b.collectionSlug));
+
+    for (const nft of nfts) {
+      const key = `${nft.contract?.toLowerCase()}-${nft.identifier}`;
+      if (portfolioKeys.has(key)) continue;           // already tracked
+      if (!bidSlugs.has(nft.collection)) continue;    // not from a bid collection
+
+      const filledBid = bids.find((b) => b.collectionSlug === nft.collection);
+      const priceEth = parseFloat(filledBid?.offerAmountEth || 0);
+
+      logger.info(`Bid fill detected: ${nft.collection} #${nft.identifier} @ ${priceEth} ETH`);
+
+      db.addToPortfolio({
+        collectionSlug: nft.collection,
+        collectionName: nft.collection,
+        contractAddress: nft.contract,
+        tokenId: nft.identifier,
+        buyPriceEth: priceEth,
+        acquiredVia: 'bid_fill',
+      });
+
+      db.addTrade({
+        type: 'buy',
+        collectionSlug: nft.collection,
+        collectionName: nft.collection,
+        tokenId: nft.identifier,
+        contractAddress: nft.contract,
+        priceEth,
+        note: 'bid_fill',
+      });
+
+      emit('trade:bid_filled', {
+        collectionSlug: nft.collection,
+        tokenId: nft.identifier,
+        contractAddress: nft.contract,
+        offerAmountEth: filledBid?.offerAmountEth,
+      });
+
+      if (filledBid?.orderHash) {
+        db.removeBidByOrderHash(filledBid.orderHash);
+      }
+    }
+  } catch (err) {
+    logger.warn(`Bid fill detection error: ${err.message}`);
   }
 }
 

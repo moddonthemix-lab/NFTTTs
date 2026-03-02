@@ -7,6 +7,13 @@ const BASE = process.env.REACT_APP_API_URL
 
 const api = axios.create({ baseURL: `${BASE}/api` });
 
+// Attach stored password to every request
+api.interceptors.request.use((config) => {
+  const pw = sessionStorage.getItem('nftbot_auth');
+  if (pw) config.headers['Authorization'] = `Bearer ${pw}`;
+  return config;
+});
+
 export const walletApi = {
   getInfo: () => api.get('/wallet').then((r) => r.data),
   importPrivateKey: (privateKey) => api.post('/wallet/import/privatekey', { privateKey }).then((r) => r.data),

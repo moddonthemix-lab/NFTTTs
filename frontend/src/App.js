@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+import PasswordGate from './components/PasswordGate';
 import Dashboard from './pages/Dashboard';
 import Scanner from './pages/Scanner';
 import Portfolio from './pages/Portfolio';
@@ -11,7 +12,9 @@ import Wallet from './pages/Wallet';
 import Logs from './pages/Logs';
 import { useSocket } from './hooks/useSocket';
 
-export default function App() {
+// AppInner only mounts after PasswordGate auth passes, so
+// useSocket() picks up the sessionStorage token at the right time.
+function AppInner() {
   const {
     connected,
     walletInfo,
@@ -83,6 +86,14 @@ export default function App() {
         </main>
       </div>
     </BrowserRouter>
+  );
+}
+
+export default function App() {
+  return (
+    <PasswordGate>
+      <AppInner />
+    </PasswordGate>
   );
 }
 

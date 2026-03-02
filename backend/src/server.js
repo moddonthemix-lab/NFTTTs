@@ -15,6 +15,7 @@ const botEngine = require('./trader/botEngine');
 const { buyNFT, placeBid, sellNFT, cancelOrder } = require('./trader/seaportTrader');
 
 const isProd = process.env.NODE_ENV === 'production';
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
 
 // --- Express Setup ---
 const app = express();
@@ -23,6 +24,20 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+
+// --- Auth Middleware ---
+// /api/health is always open (Railway health checks + frontend auth probe)
+// Everything else under /api requires the password when one is configured.
+function requireAuth(req, res, next) {
+  if (!DASHBOARD_PASSWORD) return next();
+  if (req.path === '/health') return next();
+  const auth = req.headers['authorization'];
+  if (!auth || auth !== `Bearer ${DASHBOARD_PASSWORD}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+app.use('/api', requireAuth);
 
 // Ensure logs dir exists
 if (!fs.existsSync('logs')) fs.mkdirSync('logs');
@@ -34,6 +49,14 @@ const io = new Server(httpServer, {
     origin: isProd ? true : config.server.frontendUrl,
     methods: ['GET', 'POST'],
   },
+});
+
+// --- Socket.IO Auth ---
+io.use((socket, next) => {
+  if (!DASHBOARD_PASSWORD) return next();
+  const token = socket.handshake.auth?.token;
+  if (token !== DASHBOARD_PASSWORD) return next(new Error('Unauthorized'));
+  next();
 });
 
 // Wire emitters
@@ -53,7 +76,7 @@ botEmitter.onAny?.((event, data) => {
 const BOT_EVENTS = [
   'scan:started', 'scan:collections', 'scan:opportunities', 'scan:error',
   'bot:started', 'bot:stopped', 'bot:cycle', 'bot:balance', 'bot:warn', 'bot:error',
-  'trade:buy', 'trade:sell', 'trade:bid', 'trade:error',
+  'trade:buy', 'trade:sell', 'trade:bid', 'trade:bid_filled', 'trade:error',
   'approval:queued', 'approval:resolved',
 ];
 BOT_EVENTS.forEach((evt) => {
@@ -290,7 +313,11 @@ app.delete('/api/watchlist/:slug', (req, res) => {
 });
 
 // --- Health ---
-app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+app.get('/api/health', (req, res) => res.json({
+  status: 'ok',
+  authRequired: !!DASHBOARD_PASSWORD,
+  timestamp: new Date().toISOString(),
+}));
 
 // --- Serve React frontend in production ---
 if (isProd) {
