@@ -53,7 +53,8 @@ async function scanForOpportunities() {
         if (!stats || !listings.length) continue;
 
         const floorPrice = stats.total?.floor_price || 0;
-        const oneDayVolume = stats.total?.one_day_volume || 0;
+        const oneDayInterval = stats.intervals?.find((i) => i.interval === 'one_day') || {};
+        const oneDayVolume = oneDayInterval.volume || 0;
 
         // Apply collection-level filters now that we have real stats
         if (oneDayVolume < config.scanner.minCollectionVolume) { logger.info(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
@@ -99,8 +100,8 @@ async function scanForOpportunities() {
             score,
             flipEstimate,
             oneDayVolume,
-            oneDaySales: stats.total?.one_day_sales || 0,
-            oneDayChange: stats.total?.one_day_change || 0,
+            oneDaySales: oneDayInterval.sales || 0,
+            oneDayChange: oneDayInterval.volume_change || 0,
             listing,
             scannedAt: new Date().toISOString(),
           });

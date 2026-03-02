@@ -9,9 +9,10 @@ function scoreOpportunity(listing, collectionStats) {
 
   const floorPrice = collectionStats.total?.floor_price || 0;
   const listingPriceEth = weiToEth(listing.price?.current?.value, listing.price?.current?.decimals);
-  const oneDayVolume = collectionStats.total?.one_day_volume || 0;
-  const oneDaySales = collectionStats.total?.one_day_sales || 0;
-  const oneDayChange = collectionStats.total?.one_day_change || 0;
+  const oneDayInterval = collectionStats.intervals?.find((i) => i.interval === 'one_day') || {};
+  const oneDayVolume = oneDayInterval.volume || 0;
+  const oneDaySales = oneDayInterval.sales || 0;
+  const oneDayChange = oneDayInterval.volume_change || 0;
   const numOwners = collectionStats.total?.num_owners || 0;
   const totalSupply = collectionStats.total?.total_supply || 1;
 
