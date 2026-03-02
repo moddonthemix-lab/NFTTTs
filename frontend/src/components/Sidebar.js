@@ -1,6 +1,5 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import styled from './Sidebar.module.css';
 
 const NAV = [
   { path: '/', label: 'Dashboard', icon: '◈' },
