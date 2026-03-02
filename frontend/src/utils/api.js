@@ -30,6 +30,7 @@ export const botApi = {
 
 export const scannerApi = {
   scanCollection: (slug) => api.get(`/scanner/collection/${slug}`).then((r) => r.data),
+  search: (q) => api.get('/scanner/search', { params: { q } }).then((r) => r.data),
 };
 
 export const portfolioApi = {

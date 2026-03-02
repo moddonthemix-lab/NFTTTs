@@ -11,6 +11,7 @@ const logger = require('./utils/logger');
 const walletUtils = require('./utils/wallet');
 const db = require('./utils/database');
 const { scanForOpportunities, scanCollection, setEmitter: setScanEmitter } = require('./scanner/collectionScanner');
+const openSeaApi = require('./scanner/openSeaApi');
 const botEngine = require('./trader/botEngine');
 const { buyNFT, placeBid, sellNFT, cancelOrder } = require('./trader/seaportTrader');
 
@@ -199,6 +200,17 @@ app.get('/api/scanner/collection/:slug', async (req, res) => {
     const result = await scanCollection(req.params.slug);
     if (!result) return res.status(404).json({ error: 'Collection not found' });
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/scanner/search', async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) return res.status(400).json({ error: 'q is required' });
+    const collections = await openSeaApi.searchCollections(q);
+    res.json({ collections });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

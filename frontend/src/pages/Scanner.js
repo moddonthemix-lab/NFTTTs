@@ -78,17 +78,34 @@ export default function Scanner({ opportunities, scanning }) {
 
   const handleScanNow = () => botApi.scan().catch((e) => alert(e.message));
 
+  const [searchResults, setSearchResults] = useState([]);   // list of collection objects from search
+  const [scannedResult, setScannedResult] = useState(null); // detailed scan of one picked collection
+  const [scanningSlug, setScanningSlug] = useState(null);   // which slug is being deep-scanned
+
   const handleSearchCollection = async () => {
     if (!searchSlug.trim()) return;
     setSearching(true);
-    setCollectionResult(null);
+    setSearchResults([]);
+    setScannedResult(null);
     try {
-      const result = await scannerApi.scanCollection(searchSlug.trim());
-      setCollectionResult(result);
+      const { collections } = await scannerApi.search(searchSlug.trim());
+      setSearchResults(collections || []);
     } catch (err) {
       alert(err.message);
     }
     setSearching(false);
+  };
+
+  const handleDeepScan = async (slug) => {
+    setScanningSlug(slug);
+    setScannedResult(null);
+    try {
+      const result = await scannerApi.scanCollection(slug);
+      setScannedResult(result);
+    } catch (err) {
+      alert(err.message);
+    }
+    setScanningSlug(null);
   };
 
   const handleBuy = async (opp) => {
@@ -151,13 +168,13 @@ export default function Scanner({ opportunities, scanning }) {
         </div>
       )}
 
-      {/* Search single collection */}
+      {/* Search */}
       <div style={styles.searchBox}>
         <input
           style={styles.input}
-          placeholder="Search collection by slug (e.g. boredapeyachtclub)"
+          placeholder="Search by name, slug, or 0x contract address"
           value={searchSlug}
-          onChange={(e) => setSearchSlug(e.target.value)}
+          onChange={(e) => { setSearchSlug(e.target.value); setSearchResults([]); setScannedResult(null); }}
           onKeyDown={(e) => e.key === 'Enter' && handleSearchCollection()}
         />
         <button style={styles.btnSearch} onClick={handleSearchCollection} disabled={searching}>
@@ -165,29 +182,76 @@ export default function Scanner({ opportunities, scanning }) {
         </button>
       </div>
 
-      {collectionResult && (
-        <div style={styles.collectionResult}>
-          <div style={styles.crTitle}>
-            <span>{collectionResult.collection?.name || searchSlug} — Floor: {collectionResult.stats?.total?.floor_price?.toFixed(4)} ETH</span>
-            <button
-              style={isWatched(searchSlug.trim()) ? styles.btnUnwatch : styles.btnWatch}
-              onClick={() => handleToggleWatch(searchSlug.trim(), collectionResult.collection?.name, collectionResult.collection?.image_url)}
-            >
-              {isWatched(searchSlug.trim()) ? '★ Watching' : '☆ Snipe'}
-            </button>
+      {/* Search results list */}
+      {searchResults.length > 0 && (
+        <div style={styles.searchResultsPanel}>
+          <div style={styles.srHeader}>
+            {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for "{searchSlug}"
+            <button style={styles.srClose} onClick={() => { setSearchResults([]); setScannedResult(null); }}>×</button>
           </div>
-          <div style={styles.crGrid}>
-            {collectionResult.results?.slice(0, 8).map((r, i) => (
-              <div key={i} style={styles.crItem}>
-                <span style={styles.crScore} className="mono">{r.score}</span>
-                <span className="mono">{r.priceEth?.toFixed(4)} ETH</span>
-                <span style={{ color: r.flipEstimate?.isProfitable ? '#22c55e' : '#94a3b8' }} className="mono">
-                  {r.flipEstimate?.profitPct > 0 ? '+' : ''}{r.flipEstimate?.profitPct?.toFixed(1)}%
-                </span>
+          <div style={styles.srList}>
+            {searchResults.map((col) => {
+              const slug = col.collection || col.slug;
+              const contract = col.contracts?.[0]?.address || '';
+              const watched = isWatched(slug);
+              return (
+                <div key={slug} style={styles.srRow}>
+                  {col.image_url
+                    ? <img src={col.image_url} alt="" style={styles.srImg} onError={(e) => { e.target.style.display = 'none'; }} />
+                    : <div style={styles.srImgPlaceholder} />
+                  }
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={styles.srName}>{col.name || slug}</div>
+                    <div style={styles.srMeta} className="mono">
+                      {slug}
+                      {contract && <span style={styles.srContract}> · {contract.slice(0, 6)}…{contract.slice(-4)}</span>}
+                    </div>
+                  </div>
+                  <div style={styles.srActions}>
+                    <button
+                      style={styles.srScanBtn}
+                      onClick={() => handleDeepScan(slug)}
+                      disabled={scanningSlug === slug}
+                    >
+                      {scanningSlug === slug ? '...' : 'Scan'}
+                    </button>
+                    <button
+                      style={watched ? styles.btnGroupUnwatch : styles.btnGroupWatch}
+                      onClick={() => handleToggleWatch(slug, col.name, col.image_url)}
+                      title={watched ? 'Remove from snipe list' : 'Add to snipe list'}
+                    >
+                      {watched ? '★' : '☆'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Deep scan result */}
+          {scannedResult && (
+            <div style={styles.deepScan}>
+              <div style={styles.dsTitle}>
+                {scannedResult.collection?.name} — Floor: {scannedResult.stats?.total?.floor_price?.toFixed(4)} ETH
               </div>
-            ))}
-          </div>
+              <div style={styles.crGrid}>
+                {scannedResult.results?.slice(0, 10).map((r, i) => (
+                  <div key={i} style={styles.crItem}>
+                    <span style={styles.crScore} className="mono">{r.score}</span>
+                    <span className="mono">{r.priceEth?.toFixed(4)} ETH</span>
+                    <span style={{ color: r.flipEstimate?.isProfitable ? '#22c55e' : '#94a3b8' }} className="mono">
+                      {r.flipEstimate?.profitPct > 0 ? '+' : ''}{r.flipEstimate?.profitPct?.toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      {searching && searchResults.length === 0 && (
+        <div style={styles.srSearching}>Searching...</div>
       )}
 
       {/* Filters */}
@@ -336,6 +400,21 @@ const styles = {
   btnUnwatch: { padding: '4px 12px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
   btnGroupWatch: { padding: '3px 8px', borderRadius: 6, border: '1px solid #334155', background: 'transparent', color: '#64748b', fontSize: 13, cursor: 'pointer' },
   btnGroupUnwatch: { padding: '3px 8px', borderRadius: 6, border: 'none', background: '#6366f1', color: '#fff', fontSize: 13, cursor: 'pointer' },
+  searchResultsPanel: { background: '#0f172a', border: '1px solid #334155', borderRadius: 12, overflow: 'hidden' },
+  srHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', fontSize: 12, color: '#64748b', borderBottom: '1px solid #1e293b' },
+  srClose: { background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 16, lineHeight: 1 },
+  srList: { display: 'flex', flexDirection: 'column' },
+  srRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid #1e293b' },
+  srImg: { width: 36, height: 36, borderRadius: 7, objectFit: 'cover', flexShrink: 0 },
+  srImgPlaceholder: { width: 36, height: 36, borderRadius: 7, background: '#1e293b', flexShrink: 0 },
+  srName: { fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  srMeta: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  srContract: { color: '#475569' },
+  srActions: { display: 'flex', gap: 6, flexShrink: 0 },
+  srScanBtn: { padding: '4px 12px', borderRadius: 6, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  srSearching: { color: '#64748b', fontSize: 13, textAlign: 'center', padding: '12px 0' },
+  deepScan: { padding: 14, borderTop: '1px solid #1e293b', background: '#070d1a' },
+  dsTitle: { fontWeight: 600, fontSize: 13, marginBottom: 10 },
   crGrid: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   crItem: { background: '#1e293b', borderRadius: 8, padding: '6px 12px', display: 'flex', gap: 10, fontSize: 13 },
   crScore: { color: '#6366f1', fontWeight: 700 },

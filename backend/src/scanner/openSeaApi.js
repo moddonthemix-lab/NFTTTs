@@ -31,27 +31,97 @@ async function rateLimitedCall(fn) {
 }
 
 /**
- * Fetch trending / high-volume collections
+ * Fetch trending / high-volume collections.
+ * OpenSea free tier caps each page at 20 results regardless of `limit`,
+ * so we paginate using the `next` cursor until we have enough.
  */
-async function getTrendingCollections(limit = 50) {
-  return rateLimitedCall(async () => {
+async function getTrendingCollections(limit = 60) {
+  const collected = [];
+  const seen = new Set();
+  let cursor = null;
+
+  while (collected.length < limit) {
     try {
-      const res = await api.get('/collections', {
-        params: {
-          chain: 'ethereum',
-          limit,
-          order_by: 'one_day_volume',
-        },
-      });
-      return res.data.collections || [];
+      const params = { chain: 'ethereum', limit: 20, order_by: 'one_day_volume' };
+      if (cursor) params.next = cursor;
+      const res = await rateLimitedCall(() => api.get('/collections', { params }));
+      const items = res.data.collections || [];
+      for (const c of items) {
+        const slug = c.collection || c.slug;
+        if (slug && !seen.has(slug)) { seen.add(slug); collected.push(c); }
+      }
+      cursor = res.data.next || null;
+      if (!cursor || items.length === 0) break;
     } catch (err) {
       const status = err.response?.status;
       const detail = err.response?.data?.errors?.[0] || err.response?.data?.detail || err.response?.data || err.message;
       logger.error(`OpenSea getTrendingCollections error ${status || 'network'}: ${JSON.stringify(detail)}`);
-      // Re-throw with a descriptive message so the scanner can surface it
       throw new Error(`OpenSea API error ${status || 'network'}: ${JSON.stringify(detail)}`);
     }
-  });
+  }
+
+  logger.info(`getTrendingCollections: fetched ${collected.length} unique collections`);
+  return collected.slice(0, limit);
+}
+
+/**
+ * Search collections by name, slug, or contract address.
+ * - If query looks like 0x address: resolve contract → slug → collection info
+ * - Otherwise: try exact slug match, then fetch popular collections and
+ *   filter by name/slug substring (OpenSea has no public name-search endpoint)
+ */
+async function searchCollections(query) {
+  const q = (query || '').trim();
+  if (!q) return [];
+  const results = [];
+  const seen = new Set();
+
+  const addCol = (c) => {
+    const slug = c.collection || c.slug;
+    if (slug && !seen.has(slug)) { seen.add(slug); results.push(c); }
+  };
+
+  // Contract address lookup
+  if (/^0x[a-fA-F0-9]{40}$/.test(q)) {
+    try {
+      const contractRes = await rateLimitedCall(() => api.get(`/chain/ethereum/contract/${q}`));
+      const slug = contractRes.data?.collection;
+      if (slug) {
+        const colRes = await rateLimitedCall(() => api.get(`/collections/${slug}`));
+        if (colRes.data) addCol(colRes.data);
+      }
+    } catch (err) {
+      logger.warn(`searchCollections contract lookup failed: ${err.message}`);
+    }
+    return results;
+  }
+
+  // Try exact slug match first
+  const slugGuess = q.toLowerCase().replace(/\s+/g, '-');
+  try {
+    const res = await rateLimitedCall(() => api.get(`/collections/${slugGuess}`));
+    if (res.data?.collection) addCol(res.data);
+  } catch { /* not found — continue */ }
+
+  // Fetch up to 3 pages of popular collections and filter by name/slug
+  const qLow = q.toLowerCase();
+  let cursor = null;
+  for (let page = 0; page < 3; page++) {
+    try {
+      const params = { chain: 'ethereum', limit: 20, order_by: 'one_day_volume' };
+      if (cursor) params.next = cursor;
+      const res = await rateLimitedCall(() => api.get('/collections', { params }));
+      for (const c of res.data.collections || []) {
+        const slug = c.collection || c.slug || '';
+        const name = (c.name || '').toLowerCase();
+        if (name.includes(qLow) || slug.toLowerCase().includes(qLow)) addCol(c);
+      }
+      cursor = res.data.next || null;
+      if (!cursor) break;
+    } catch { break; }
+  }
+
+  return results.slice(0, 20);
 }
 
 /**
@@ -165,6 +235,7 @@ async function getCollection(slug) {
 
 module.exports = {
   getTrendingCollections,
+  searchCollections,
   getCollectionStats,
   getCheapestListings,
   getNFT,
