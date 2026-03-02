@@ -40,12 +40,12 @@ async function scanForOpportunities() {
     emit('scan:collections', { count: collections.length, collections: collections.slice(0, 20) });
 
     // Step 2: Build the full list of slugs to scan.
-    // - Top 40 trending collections
+    // - Top 60 trending collections
     // - All watchlisted collections (always included, bypass volume filter)
     const watchlist = db.getWatchlist(walletUtils.getWalletAddress());
     const watchlistSlugs = new Set(watchlist.map((w) => w.slug));
 
-    const trendingSlugs = collections.slice(0, 40).map((c) => ({
+    const trendingSlugs = collections.slice(0, 60).map((c) => ({
       slug: c.collection || c.slug,
       col: c,
       isWatchlisted: false,

@@ -4,7 +4,13 @@ import StatCard from '../components/StatCard';
 import { botApi } from '../utils/api';
 import { format } from 'date-fns';
 
-export default function Dashboard({ walletInfo, botRunning, stats, trades, portfolio, pendingApprovals, scanning }) {
+const fmtUsd = (eth, price) => {
+  if (!price || !eth) return null;
+  const usd = eth * price;
+  return usd >= 1000 ? `≈ $${Math.round(usd).toLocaleString()}` : `≈ $${usd.toFixed(2)}`;
+};
+
+export default function Dashboard({ walletInfo, botRunning, stats, trades, portfolio, pendingApprovals, scanning, ethPrice }) {
   const [starting, setStarting] = React.useState(false);
 
   const handleToggleBot = async () => {
@@ -68,6 +74,11 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
           </span>
           <span style={styles.walletBal} className="mono">
             {walletInfo.balanceEth?.toFixed(6)} ETH
+            {ethPrice && walletInfo.balanceEth != null && (
+              <span style={{ color: '#64748b', fontSize: 13, fontWeight: 400, marginLeft: 8 }}>
+                {fmtUsd(walletInfo.balanceEth, ethPrice)}
+              </span>
+            )}
           </span>
           {walletInfo.needsReimport && (
             <span style={styles.warn}>⚠ Re-import wallet to sign transactions</span>
@@ -81,12 +92,13 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
 
       {/* Stats */}
       <div style={styles.statsGrid}>
-        <StatCard icon="⬡" label="Total Bought" value={`${(stats?.totalBought || 0).toFixed(4)} ETH`} color="#6366f1" />
-        <StatCard icon="⟳" label="Total Sold" value={`${(stats?.totalSold || 0).toFixed(4)} ETH`} color="#22c55e" />
+        <StatCard icon="⬡" label="Total Bought" value={`${(stats?.totalBought || 0).toFixed(4)} ETH`} sub={fmtUsd(stats?.totalBought, ethPrice)} color="#6366f1" />
+        <StatCard icon="⟳" label="Total Sold" value={`${(stats?.totalSold || 0).toFixed(4)} ETH`} sub={fmtUsd(stats?.totalSold, ethPrice)} color="#22c55e" />
         <StatCard
           icon="$"
           label="Total Profit"
           value={`${(stats?.totalProfit || 0) >= 0 ? '+' : ''}${(stats?.totalProfit || 0).toFixed(4)} ETH`}
+          sub={fmtUsd(stats?.totalProfit, ethPrice)}
           color={(stats?.totalProfit || 0) >= 0 ? '#22c55e' : '#ef4444'}
         />
         <StatCard icon="◉" label="Portfolio" value={portfolio?.length || 0} sub={`of ${10} max`} />

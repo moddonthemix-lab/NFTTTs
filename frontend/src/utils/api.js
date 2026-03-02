@@ -19,6 +19,11 @@ export const walletApi = {
   importPrivateKey: (privateKey) => api.post('/wallet/import/privatekey', { privateKey }).then((r) => r.data),
   importMnemonic: (mnemonic, derivationPath) => api.post('/wallet/import/mnemonic', { mnemonic, derivationPath }).then((r) => r.data),
   createNew: () => api.post('/wallet/create').then((r) => r.data),
+  forget: () => api.delete('/wallet').then((r) => r.data),
+};
+
+export const ethPriceApi = {
+  get: () => api.get('/ethprice').then((r) => r.data),
 };
 
 export const botApi = {
@@ -30,7 +35,7 @@ export const botApi = {
 
 export const scannerApi = {
   scanCollection: (slug) => api.get(`/scanner/collection/${slug}`).then((r) => r.data),
-  search: (q) => api.get('/scanner/search', { params: { q } }).then((r) => r.data),
+  search: (q, chain = 'ethereum') => api.get('/scanner/search', { params: { q, chain } }).then((r) => r.data),
 };
 
 export const portfolioApi = {

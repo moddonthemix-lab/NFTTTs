@@ -9,7 +9,6 @@ const api = axios.create({
 });
 
 // Read the key at request time so Railway env vars are always picked up.
-// This avoids the key being baked in as '' if the env isn't ready at module-load time.
 api.interceptors.request.use((reqConfig) => {
   const key = process.env.OPENSEA_API_KEY || config.opensea.apiKey;
   if (key) reqConfig.headers['X-API-KEY'] = key;
@@ -28,6 +27,26 @@ async function rateLimitedCall(fn) {
   if (gap < 250) await new Promise((r) => setTimeout(r, 250 - gap));
   lastCallTime = Date.now();
   return fn();
+}
+
+// --- ETH/USD price (CoinGecko public API, cached 5 min) ---
+let _ethPriceUsd = null;
+let _ethPriceAt = 0;
+
+async function getEthPriceUsd() {
+  const now = Date.now();
+  if (_ethPriceUsd && now - _ethPriceAt < 5 * 60 * 1000) return _ethPriceUsd;
+  try {
+    const r = await axios.get(
+      'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+      { timeout: 5000 }
+    );
+    const price = r.data?.ethereum?.usd;
+    if (price) { _ethPriceUsd = price; _ethPriceAt = now; }
+  } catch {
+    // keep stale value on failure — better than null
+  }
+  return _ethPriceUsd;
 }
 
 /**
@@ -66,11 +85,9 @@ async function getTrendingCollections(limit = 60) {
 
 /**
  * Search collections by name, slug, or contract address.
- * - If query looks like 0x address: resolve contract → slug → collection info
- * - Otherwise: try exact slug match, then fetch popular collections and
- *   filter by name/slug substring (OpenSea has no public name-search endpoint)
+ * chain: 'ethereum' (default) or 'base'
  */
-async function searchCollections(query) {
+async function searchCollections(query, chain = 'ethereum') {
   const q = (query || '').trim();
   if (!q) return [];
   const results = [];
@@ -84,7 +101,7 @@ async function searchCollections(query) {
   // Contract address lookup
   if (/^0x[a-fA-F0-9]{40}$/.test(q)) {
     try {
-      const contractRes = await rateLimitedCall(() => api.get(`/chain/ethereum/contract/${q}`));
+      const contractRes = await rateLimitedCall(() => api.get(`/chain/${chain}/contract/${q}`));
       const slug = contractRes.data?.collection;
       if (slug) {
         const colRes = await rateLimitedCall(() => api.get(`/collections/${slug}`));
@@ -103,12 +120,12 @@ async function searchCollections(query) {
     if (res.data?.collection) addCol(res.data);
   } catch { /* not found — continue */ }
 
-  // Fetch up to 3 pages of popular collections and filter by name/slug
+  // Fetch up to 3 pages of popular collections on the selected chain and filter by name/slug
   const qLow = q.toLowerCase();
   let cursor = null;
   for (let page = 0; page < 3; page++) {
     try {
-      const params = { chain: 'ethereum', limit: 20, order_by: 'one_day_volume' };
+      const params = { chain, limit: 20, order_by: 'one_day_volume' };
       if (cursor) params.next = cursor;
       const res = await rateLimitedCall(() => api.get('/collections', { params }));
       for (const c of res.data.collections || []) {
@@ -159,10 +176,10 @@ async function getCheapestListings(slug, limit = 20) {
 /**
  * Get a single NFT's details
  */
-async function getNFT(contractAddress, tokenId) {
+async function getNFT(contractAddress, tokenId, chain = 'ethereum') {
   return rateLimitedCall(async () => {
     try {
-      const res = await api.get(`/chain/ethereum/contract/${contractAddress}/nfts/${tokenId}`);
+      const res = await api.get(`/chain/${chain}/contract/${contractAddress}/nfts/${tokenId}`);
       return res.data.nft || null;
     } catch (err) {
       logger.error(`OpenSea getNFT error: ${err.message}`);
@@ -174,12 +191,12 @@ async function getNFT(contractAddress, tokenId) {
 /**
  * Get NFTs owned by a wallet address
  */
-async function getNFTsByOwner(walletAddress, limit = 50, next = null) {
+async function getNFTsByOwner(walletAddress, limit = 50, next = null, chain = 'ethereum') {
   return rateLimitedCall(async () => {
     try {
       const params = { limit };
       if (next) params.next = next;
-      const res = await api.get(`/chain/ethereum/account/${walletAddress}/nfts`, { params });
+      const res = await api.get(`/chain/${chain}/account/${walletAddress}/nfts`, { params });
       return { nfts: res.data.nfts || [], next: res.data.next || null };
     } catch (err) {
       logger.error(`OpenSea getNFTsByOwner error: ${err.message}`);
@@ -243,4 +260,5 @@ module.exports = {
   getOffers,
   getBestListing,
   getCollection,
+  getEthPriceUsd,
 };

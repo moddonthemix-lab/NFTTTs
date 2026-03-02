@@ -1,6 +1,12 @@
 import React from 'react';
 
-export default function OpportunityCard({ opp, onBuy, onBid, onFavorite, isFavorited }) {
+const fmtUsd = (eth, price) => {
+  if (!price || !eth) return null;
+  const usd = eth * price;
+  return usd >= 1000 ? `≈ $${Math.round(usd).toLocaleString()}` : `≈ $${usd.toFixed(2)}`;
+};
+
+export default function OpportunityCard({ opp, onBuy, onBid, onFavorite, isFavorited, ethPrice }) {
   const profitPct = opp.flipEstimate?.profitPct || 0;
   const isProfitable = opp.flipEstimate?.isProfitable;
 
@@ -39,10 +45,15 @@ export default function OpportunityCard({ opp, onBuy, onBid, onFavorite, isFavor
       </div>
 
       <div style={styles.grid}>
-        <Metric label="List Price" value={`${opp.listingPriceEth?.toFixed(4)} ETH`} />
+        <Metric
+          label="List Price"
+          value={`${opp.listingPriceEth?.toFixed(4)} ETH`}
+          sub={fmtUsd(opp.listingPriceEth, ethPrice)}
+        />
         <Metric
           label={opp.avgSalePriceEth ? 'Avg Sale' : 'Floor'}
           value={`${(opp.avgSalePriceEth || opp.floorPriceEth)?.toFixed(4)} ETH`}
+          sub={fmtUsd(opp.avgSalePriceEth || opp.floorPriceEth, ethPrice)}
           hint={opp.avgSalePriceEth ? 'Avg 24h sale — realistic exit price' : 'Floor price (no recent sales data)'}
         />
         <Metric
@@ -66,11 +77,12 @@ export default function OpportunityCard({ opp, onBuy, onBid, onFavorite, isFavor
   );
 }
 
-function Metric({ label, value, color, hint }) {
+function Metric({ label, value, color, hint, sub }) {
   return (
     <div style={styles.metric} title={hint}>
       <div style={styles.metricLabel}>{label}</div>
       <div style={{ ...styles.metricValue, color: color || '#f1f5f9' }} className="mono">{value}</div>
+      {sub && <div style={styles.metricSub}>{sub}</div>}
     </div>
   );
 }
@@ -98,6 +110,7 @@ const styles = {
   metric: { background: '#1e293b', borderRadius: 8, padding: '8px 10px' },
   metricLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   metricValue: { fontSize: 13, fontWeight: 600 },
+  metricSub: { fontSize: 10, color: '#475569', marginTop: 2 },
   heartBtn: { background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '2px 4px' },
   actions: { display: 'flex', gap: 8 },
   btnBuy: {

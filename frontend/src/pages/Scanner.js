@@ -2,11 +2,21 @@ import React, { useState, useEffect } from 'react';
 import OpportunityCard from '../components/OpportunityCard';
 import { botApi, bidsApi, tradesApi, scannerApi, watchlistApi, favoritesApi } from '../utils/api';
 
-export default function Scanner({ opportunities, scanning }) {
+const fmtUsd = (eth, price) => {
+  if (!price || !eth) return null;
+  const usd = eth * price;
+  return usd >= 1000 ? `≈ $${Math.round(usd).toLocaleString()}` : `≈ $${usd.toFixed(2)}`;
+};
+
+const PAGE_SIZE = 20;
+
+export default function Scanner({ opportunities, scanning, ethPrice }) {
   const [searchSlug, setSearchSlug] = useState('');
+  const [searchChain, setSearchChain] = useState('ethereum');
   const [collectionResult, setCollectionResult] = useState(null);
   const [searching, setSearching] = useState(false);
   const [watchlist, setWatchlist] = useState([]);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     watchlistApi.get().then(setWatchlist).catch(() => {});
@@ -103,6 +113,9 @@ export default function Scanner({ opportunities, scanning }) {
     return list;
   }, [opportunities, sort, filter]);
 
+  // Reset page when filter/sort changes
+  React.useEffect(() => setPage(0), [opportunities, filter, sort]);
+
   // Group sorted listings by collection, preserving inter-collection order by best score
   const grouped = React.useMemo(() => {
     const map = new Map();
@@ -135,7 +148,7 @@ export default function Scanner({ opportunities, scanning }) {
     setSearchResults([]);
     setScannedResult(null);
     try {
-      const { collections } = await scannerApi.search(searchSlug.trim());
+      const { collections } = await scannerApi.search(searchSlug.trim(), searchChain);
       setSearchResults(collections || []);
     } catch (err) {
       alert(err.message);
@@ -217,9 +230,21 @@ export default function Scanner({ opportunities, scanning }) {
 
       {/* Search */}
       <div style={styles.searchBox}>
+        <div style={styles.chainToggle}>
+          {[{ key: 'ethereum', label: 'ETH' }, { key: 'base', label: 'BASE' }].map(({ key, label }) => (
+            <button
+              key={key}
+              style={{ ...styles.chainBtn, ...(searchChain === key ? styles.chainBtnActive : {}) }}
+              onClick={() => setSearchChain(key)}
+              title={key === 'ethereum' ? 'Search Ethereum collections' : 'Search Base network collections'}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <input
-          style={styles.input}
-          placeholder="Search by name, slug, or 0x contract address"
+          style={{ ...styles.input, flex: 1 }}
+          placeholder={`Search ${searchChain === 'base' ? 'Base' : 'Ethereum'} by name, slug, or 0x contract`}
           value={searchSlug}
           onChange={(e) => { setSearchSlug(e.target.value); setSearchResults([]); setScannedResult(null); }}
           onKeyDown={(e) => e.key === 'Enter' && handleSearchCollection()}
@@ -308,6 +333,7 @@ export default function Scanner({ opportunities, scanning }) {
                       onBid={handleBidOpen}
                       onFavorite={handleToggleFavorite}
                       isFavorited={isFavorited(opp.id)}
+                      ethPrice={ethPrice}
                     />
                   );
                 })}
@@ -355,7 +381,7 @@ export default function Scanner({ opportunities, scanning }) {
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {grouped.map((group) => {
+        {grouped.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((group) => {
           const isExpanded = expandedCollections.has(group.slug);
           const bestScore = group.listings[0]?.score ?? 0;
           const scoreColor = bestScore >= 75 ? '#22c55e' : bestScore >= 50 ? '#eab308' : '#94a3b8';
@@ -371,7 +397,9 @@ export default function Scanner({ opportunities, scanning }) {
                   <div style={{ minWidth: 0 }}>
                     <div style={styles.groupName}>{group.name}</div>
                     <div style={styles.groupMeta} className="mono">
-                      Floor {group.floorPriceEth?.toFixed(4)} ETH &nbsp;·&nbsp; Vol {(group.oneDayVolume || 0).toFixed(2)} ETH
+                      Floor {group.floorPriceEth?.toFixed(4)} ETH
+                      {ethPrice && group.floorPriceEth ? ` (${fmtUsd(group.floorPriceEth, ethPrice)})` : ''}
+                      &nbsp;·&nbsp; Vol {(group.oneDayVolume || 0).toFixed(2)} ETH
                     </div>
                   </div>
                 </div>
@@ -410,6 +438,7 @@ export default function Scanner({ opportunities, scanning }) {
                       onBid={handleBidOpen}
                       onFavorite={handleToggleFavorite}
                       isFavorited={isFavorited(opp.id)}
+                      ethPrice={ethPrice}
                     />
                   ))}
                 </div>
@@ -418,6 +447,26 @@ export default function Scanner({ opportunities, scanning }) {
           );
         })}
       </div>
+
+      {/* Pagination */}
+      {grouped.length > PAGE_SIZE && (
+        <div style={styles.pagination}>
+          <button
+            style={{ ...styles.pageBtn, opacity: page === 0 ? 0.3 : 1 }}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+          >← Prev</button>
+          <span style={styles.pageInfo}>
+            {page + 1} / {Math.ceil(grouped.length / PAGE_SIZE)}
+            &nbsp;<span style={{ color: '#475569' }}>({grouped.length} collections)</span>
+          </span>
+          <button
+            style={{ ...styles.pageBtn, opacity: page >= Math.ceil(grouped.length / PAGE_SIZE) - 1 ? 0.3 : 1 }}
+            onClick={() => setPage((p) => Math.min(Math.ceil(grouped.length / PAGE_SIZE) - 1, p + 1))}
+            disabled={page >= Math.ceil(grouped.length / PAGE_SIZE) - 1}
+          >Next →</button>
+        </div>
+      )}
 
       {/* Sweep Modal */}
       {sweepModal && (
@@ -493,8 +542,14 @@ const styles = {
   h1: { fontSize: 24, fontWeight: 700 },
   sub: { color: '#64748b', fontSize: 13, marginTop: 2 },
   btnScan: { padding: '9px 18px', borderRadius: 9, border: 'none', background: '#6366f1', color: '#fff', fontWeight: 700, fontSize: 14 },
-  searchBox: { display: 'flex', gap: 10 },
-  input: { flex: 1, padding: '9px 14px', borderRadius: 9, border: '1px solid #334155', background: '#1e293b', color: '#f1f5f9', fontSize: 14, outline: 'none' },
+  searchBox: { display: 'flex', gap: 10, alignItems: 'center' },
+  chainToggle: { display: 'flex', borderRadius: 9, overflow: 'hidden', border: '1px solid #334155', flexShrink: 0 },
+  chainBtn: { padding: '9px 12px', border: 'none', background: '#1e293b', color: '#64748b', fontWeight: 700, fontSize: 11, cursor: 'pointer', letterSpacing: 0.5 },
+  chainBtnActive: { background: '#6366f1', color: '#fff' },
+  input: { padding: '9px 14px', borderRadius: 9, border: '1px solid #334155', background: '#1e293b', color: '#f1f5f9', fontSize: 14, outline: 'none' },
+  pagination: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, padding: '8px 0' },
+  pageBtn: { padding: '7px 16px', borderRadius: 8, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontWeight: 600, fontSize: 13, cursor: 'pointer' },
+  pageInfo: { fontSize: 13, color: '#94a3b8', fontFamily: 'JetBrains Mono, monospace' },
   btnSearch: { padding: '9px 18px', borderRadius: 9, border: 'none', background: '#1e293b', color: '#94a3b8', fontWeight: 600, fontSize: 14 },
   collectionResult: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 16 },
   crTitle: { fontWeight: 600, marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 },

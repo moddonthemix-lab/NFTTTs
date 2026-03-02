@@ -12,6 +12,7 @@ const walletUtils = require('./utils/wallet');
 const db = require('./utils/database');
 const { scanForOpportunities, scanCollection, setEmitter: setScanEmitter } = require('./scanner/collectionScanner');
 const openSeaApi = require('./scanner/openSeaApi');
+const { getEthPriceUsd } = openSeaApi;
 const botEngine = require('./trader/botEngine');
 const { buyNFT, placeBid, sellNFT, cancelOrder } = require('./trader/seaportTrader');
 const { weiToEth } = require('./analyzer/scorer');
@@ -117,6 +118,12 @@ io.on('connection', (socket) => {
 // REST API Routes
 // ============================================================
 
+// --- ETH/USD price ---
+app.get('/api/ethprice', async (req, res) => {
+  const usd = await getEthPriceUsd();
+  res.json({ usd });
+});
+
 // --- Wallet ---
 app.get('/api/wallet', async (req, res) => {
   try {
@@ -165,6 +172,12 @@ app.post('/api/wallet/create', async (req, res) => {
   }
 });
 
+app.delete('/api/wallet', (req, res) => {
+  walletUtils.forgetWallet();
+  io.emit('wallet:disconnected', {});
+  res.json({ success: true });
+});
+
 // --- Bot Control ---
 app.post('/api/bot/start', (req, res) => {
   const started = botEngine.startBot();
@@ -209,8 +222,9 @@ app.get('/api/scanner/collection/:slug', async (req, res) => {
 app.get('/api/scanner/search', async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
+    const chain = req.query.chain || 'ethereum';
     if (!q) return res.status(400).json({ error: 'q is required' });
-    const collections = await openSeaApi.searchCollections(q);
+    const collections = await openSeaApi.searchCollections(q, chain);
     res.json({ collections });
   } catch (err) {
     res.status(500).json({ error: err.message });

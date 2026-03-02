@@ -9,6 +9,19 @@ export default function Wallet({ walletInfo }) {
   const [loading, setLoading] = useState(false);
   const [newWallet, setNewWallet] = useState(null);
   const [showKey, setShowKey] = useState(false);
+  const [forgetting, setForgetting] = useState(false);
+
+  const handleForget = async () => {
+    if (!window.confirm('Remove saved wallet from server? You will need to re-import to trade again.')) return;
+    setForgetting(true);
+    try {
+      await walletApi.forget();
+      alert('Wallet cleared. Reload the page to update status.');
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+    setForgetting(false);
+  };
 
   const handleImportPK = async () => {
     if (!privateKey.trim()) return alert('Enter a private key');
@@ -68,11 +81,20 @@ export default function Wallet({ walletInfo }) {
             <span style={styles.balLabel}>Balance</span>
             <span style={styles.bal} className="mono">{walletInfo.balanceEth?.toFixed(6)} ETH</span>
           </div>
+          <div style={styles.balRow}>
+            <span style={styles.balLabel}>Saved</span>
+            <span style={{ fontSize: 13, color: walletInfo.isSaved ? '#22c55e' : '#eab308' }}>
+              {walletInfo.isSaved ? '✓ Auto-loads on restart' : '✗ Not saved — re-import after restart'}
+            </span>
+          </div>
           {walletInfo.needsReimport && (
             <div style={styles.reimportWarn}>
               ⚠ Server restarted — re-import your private key to sign transactions
             </div>
           )}
+          <button style={styles.btnForget} onClick={handleForget} disabled={forgetting}>
+            {forgetting ? 'Clearing...' : '✕ Forget Wallet'}
+          </button>
         </div>
       )}
 
@@ -126,7 +148,7 @@ export default function Wallet({ walletInfo }) {
               </button>
             </div>
             <div style={styles.secNote}>
-              🔒 Your key is sent to the local server only and never stored on disk in plain text.
+              🔒 Your key is saved to the server's data volume and auto-loaded on restart. Use "Forget Wallet" on the status panel above to clear it.
             </div>
             <button style={styles.btnImport} onClick={handleImportPK} disabled={loading}>
               {loading ? 'Connecting...' : 'Import Wallet'}
@@ -217,6 +239,7 @@ const styles = {
   balLabel: { fontSize: 12, color: '#64748b' },
   bal: { fontSize: 18, fontWeight: 700, color: '#22c55e' },
   reimportWarn: { background: 'rgba(234,179,8,0.1)', borderRadius: 8, padding: '8px 12px', color: '#eab308', fontSize: 12 },
+  btnForget: { padding: '6px 14px', borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', fontSize: 12, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' },
   newWalletBox: { background: 'rgba(239,68,68,0.08)', border: '2px solid rgba(239,68,68,0.3)', borderRadius: 12, padding: 20, display: 'flex', flexDirection: 'column', gap: 10 },
   newWalletTitle: { color: '#ef4444', fontWeight: 700, fontSize: 16 },
   newWalletWarn: { color: '#fca5a5', fontSize: 13 },

@@ -13,6 +13,7 @@ import Logs from './pages/Logs';
 import Favorites from './pages/Favorites';
 import WhaleTracker from './pages/WhaleTracker';
 import { useSocket } from './hooks/useSocket';
+import { ethPriceApi } from './utils/api';
 
 // AppInner only mounts after PasswordGate auth passes, so
 // useSocket() picks up the sessionStorage token at the right time.
@@ -31,6 +32,14 @@ function AppInner() {
     scanning,
     logs,
   } = useSocket();
+
+  const [ethPrice, setEthPrice] = React.useState(null);
+  React.useEffect(() => {
+    const fetch = () => ethPriceApi.get().then((d) => setEthPrice(d.usd)).catch(() => {});
+    fetch();
+    const t = setInterval(fetch, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <BrowserRouter>
@@ -53,12 +62,13 @@ function AppInner() {
                   portfolio={portfolio}
                   pendingApprovals={pendingApprovals}
                   scanning={scanning}
+                  ethPrice={ethPrice}
                 />
               }
             />
             <Route
               path="/scanner"
-              element={<Scanner opportunities={opportunities} scanning={scanning} />}
+              element={<Scanner opportunities={opportunities} scanning={scanning} ethPrice={ethPrice} />}
             />
             <Route path="/favorites" element={<Favorites />} />
             <Route
