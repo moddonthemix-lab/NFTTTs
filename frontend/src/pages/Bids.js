@@ -1,0 +1,127 @@
+import React, { useState } from 'react';
+import { bidsApi } from '../utils/api';
+import { format } from 'date-fns';
+
+export default function Bids({ bids, setBids }) {
+  const [showForm, setShowForm] = useState(false);
+  const [slug, setSlug] = useState('');
+  const [amount, setAmount] = useState('');
+  const [hours, setHours] = useState(24);
+  const [loading, setLoading] = useState(false);
+  const [cancelling, setCancelling] = useState({});
+
+  const handlePlace = async () => {
+    if (!slug || !amount) return alert('Fill in all fields');
+    setLoading(true);
+    try {
+      const result = await bidsApi.place(slug.trim(), parseFloat(amount), parseInt(hours));
+      alert(`Bid placed! Order: ${result.orderHash || 'submitted'}`);
+      setShowForm(false);
+      setSlug(''); setAmount('');
+    } catch (err) {
+      alert(`Bid failed: ${err.response?.data?.error || err.message}`);
+    }
+    setLoading(false);
+  };
+
+  const handleCancel = async (bid) => {
+    if (!bid.orderHash) return alert('No order hash to cancel');
+    setCancelling((p) => ({ ...p, [bid.orderHash]: true }));
+    try {
+      await bidsApi.cancel(bid.orderHash);
+      setBids?.((prev) => prev.filter((b) => b.orderHash !== bid.orderHash));
+      alert('Bid cancelled');
+    } catch (err) {
+      alert(`Cancel failed: ${err.response?.data?.error || err.message}`);
+    }
+    setCancelling((p) => ({ ...p, [bid.orderHash]: false }));
+  };
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.header}>
+        <div>
+          <h1 style={styles.h1}>Active Bids</h1>
+          <p style={styles.sub}>{(bids || []).length} active collection bids</p>
+        </div>
+        <button style={styles.btnNew} onClick={() => setShowForm(!showForm)}>
+          {showForm ? '✗ Cancel' : '+ New Bid'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div style={styles.form}>
+          <h3 style={styles.formTitle}>Place Collection Bid</h3>
+          <label style={styles.label}>Collection Slug</label>
+          <input style={styles.input} placeholder="e.g. boredapeyachtclub" value={slug} onChange={(e) => setSlug(e.target.value)} />
+          <label style={styles.label}>Offer Amount (ETH / WETH)</label>
+          <input style={styles.input} type="number" step="0.001" placeholder="0.05" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <label style={styles.label}>Expires In (hours)</label>
+          <input style={styles.input} type="number" value={hours} onChange={(e) => setHours(e.target.value)} />
+          <div style={styles.note}>
+            Bidding wraps ETH → WETH automatically if needed and approves Seaport.
+          </div>
+          <button style={styles.btnPlace} onClick={handlePlace} disabled={loading}>
+            {loading ? 'Placing...' : 'Place Bid'}
+          </button>
+        </div>
+      )}
+
+      {!bids?.length ? (
+        <div style={styles.empty}>No active bids. Place a bid above to get started.</div>
+      ) : (
+        <div style={styles.list}>
+          {bids.map((bid, i) => (
+            <div key={i} style={styles.card}>
+              <div style={styles.cardLeft}>
+                <div style={styles.bidSlug}>{bid.collectionSlug}</div>
+                <div style={styles.bidMeta}>
+                  <span className="mono" style={{ color: '#eab308' }}>{bid.offerAmountEth} ETH</span>
+                  {bid.placedAt && (
+                    <span style={{ color: '#64748b', fontSize: 12 }}>
+                      Placed {format(new Date(bid.placedAt), 'MMM d HH:mm')}
+                    </span>
+                  )}
+                  {bid.orderHash && (
+                    <span style={styles.hash} className="mono">
+                      {bid.orderHash.slice(0, 10)}...
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                style={styles.btnCancel}
+                onClick={() => handleCancel(bid)}
+                disabled={cancelling[bid.orderHash]}
+              >
+                {cancelling[bid.orderHash] ? '...' : 'Cancel'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const styles = {
+  page: { padding: 28, maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
+  h1: { fontSize: 24, fontWeight: 700 },
+  sub: { color: '#64748b', fontSize: 13, marginTop: 2 },
+  btnNew: { padding: '9px 18px', borderRadius: 9, border: 'none', background: '#eab308', color: '#0a0e1a', fontWeight: 700, fontSize: 14 },
+  form: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 20, display: 'flex', flexDirection: 'column', gap: 10 },
+  formTitle: { fontWeight: 700, fontSize: 16 },
+  label: { fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { padding: '10px 14px', borderRadius: 9, border: '1px solid #334155', background: '#1e293b', color: '#f1f5f9', fontSize: 14, outline: 'none' },
+  note: { fontSize: 12, color: '#64748b', background: '#1e293b', borderRadius: 8, padding: '8px 12px' },
+  btnPlace: { padding: '11px 0', borderRadius: 9, border: 'none', background: '#eab308', color: '#0a0e1a', fontWeight: 700, fontSize: 15 },
+  empty: { textAlign: 'center', color: '#64748b', padding: '48px 0', fontSize: 14 },
+  list: { display: 'flex', flexDirection: 'column', gap: 10 },
+  card: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  cardLeft: { display: 'flex', flexDirection: 'column', gap: 4 },
+  bidSlug: { fontWeight: 600, fontSize: 15 },
+  bidMeta: { display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' },
+  hash: { fontSize: 11, color: '#334155' },
+  btnCancel: { padding: '7px 16px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#ef4444', fontWeight: 600, fontSize: 13 },
+};

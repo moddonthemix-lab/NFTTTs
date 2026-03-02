@@ -1,0 +1,158 @@
+const openSeaApi = require('./openSeaApi');
+const { scoreOpportunity, estimateFlip, weiToEth } = require('../analyzer/scorer');
+const config = require('../config');
+const logger = require('../utils/logger');
+
+let _emitter = null;
+
+function setEmitter(emitter) {
+  _emitter = emitter;
+}
+
+function emit(event, data) {
+  if (_emitter) _emitter.emit(event, data);
+}
+
+/**
+ * Run a full scan cycle:
+ * 1. Fetch trending collections
+ * 2. Filter by volume/price criteria
+ * 3. Pull cheapest listings from each
+ * 4. Score and rank opportunities
+ */
+async function scanForOpportunities() {
+  logger.info('Starting NFT opportunity scan...');
+  emit('scan:started', { timestamp: new Date().toISOString() });
+
+  const opportunities = [];
+
+  try {
+    // Step 1: Get trending collections
+    const collections = await openSeaApi.getTrendingCollections(60);
+    logger.info(`Fetched ${collections.length} trending collections`);
+
+    // Step 2: Filter collections by config criteria
+    const filtered = collections.filter((col) => {
+      const vol = col.stats?.one_day_volume || col.one_day_volume || 0;
+      const floor = col.stats?.floor_price || col.floor_price || 0;
+      return (
+        vol >= config.scanner.minCollectionVolume &&
+        floor >= config.scanner.minFloorPrice &&
+        floor <= config.scanner.maxFloorPrice
+      );
+    });
+
+    logger.info(`${filtered.length} collections passed filters`);
+    emit('scan:collections', { count: filtered.length, collections: filtered.slice(0, 20) });
+
+    // Step 3: For each collection, get stats + cheap listings
+    for (const col of filtered.slice(0, 25)) {
+      try {
+        const slug = col.collection || col.slug;
+        if (!slug) continue;
+
+        const [stats, listings] = await Promise.all([
+          openSeaApi.getCollectionStats(slug),
+          openSeaApi.getCheapestListings(slug, 10),
+        ]);
+
+        if (!stats || !listings.length) continue;
+
+        const floorPrice = stats.total?.floor_price || 0;
+
+        for (const listing of listings) {
+          const listingPriceEth = weiToEth(
+            listing.price?.current?.value,
+            listing.price?.current?.decimals
+          );
+
+          if (
+            listingPriceEth <= 0 ||
+            listingPriceEth > config.trading.maxBuyPriceEth
+          ) continue;
+
+          const score = scoreOpportunity(listing, stats);
+          const flipEstimate = estimateFlip(listingPriceEth, floorPrice);
+
+          if (score < 20 || !flipEstimate.isProfitable) continue;
+
+          const tokenId = listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria
+            || listing.order_hash?.slice(0, 8);
+
+          const contractAddress =
+            listing.protocol_data?.parameters?.offer?.[0]?.token
+            || col.primary_asset_contracts?.[0]?.address
+            || '';
+
+          opportunities.push({
+            id: listing.order_hash || `${slug}_${tokenId}`,
+            collectionSlug: slug,
+            collectionName: col.name || slug,
+            collectionImage: col.image_url || '',
+            contractAddress,
+            tokenId,
+            listingPriceEth,
+            floorPriceEth: floorPrice,
+            score,
+            flipEstimate,
+            oneDayVolume: stats.total?.one_day_volume || 0,
+            oneDaySales: stats.total?.one_day_sales || 0,
+            oneDayChange: stats.total?.one_day_change || 0,
+            listing,
+            scannedAt: new Date().toISOString(),
+          });
+        }
+      } catch (err) {
+        logger.warn(`Error scanning collection ${col.collection}: ${err.message}`);
+      }
+    }
+
+    // Step 4: Sort by score desc
+    opportunities.sort((a, b) => b.score - a.score);
+
+    logger.info(`Scan complete. Found ${opportunities.length} opportunities.`);
+    emit('scan:opportunities', { count: opportunities.length, opportunities });
+
+    return opportunities;
+  } catch (err) {
+    logger.error(`Scan failed: ${err.message}`);
+    emit('scan:error', { message: err.message });
+    return [];
+  }
+}
+
+/**
+ * Detailed scan of a single collection
+ */
+async function scanCollection(slug) {
+  try {
+    const [collection, stats, listings] = await Promise.all([
+      openSeaApi.getCollection(slug),
+      openSeaApi.getCollectionStats(slug),
+      openSeaApi.getCheapestListings(slug, 30),
+    ]);
+
+    if (!stats) return null;
+
+    const floorPrice = stats.total?.floor_price || 0;
+    const results = listings
+      .map((listing) => {
+        const priceEth = weiToEth(
+          listing.price?.current?.value,
+          listing.price?.current?.decimals
+        );
+        const score = scoreOpportunity(listing, stats);
+        const flipEstimate = estimateFlip(priceEth, floorPrice);
+        return { listing, priceEth, score, flipEstimate };
+      })
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    return { collection, stats, results };
+  } catch (err) {
+    logger.error(`scanCollection(${slug}) failed: ${err.message}`);
+    return null;
+  }
+}
+
+module.exports = { scanForOpportunities, scanCollection, setEmitter };
