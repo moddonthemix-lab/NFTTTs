@@ -13,6 +13,17 @@ export default function Scanner({ opportunities, scanning }) {
   const [bidHours, setBidHours] = useState(24);
   const [actionLoading, setActionLoading] = useState(null);
 
+  const [expandedCollections, setExpandedCollections] = useState(new Set());
+
+  const toggleCollection = (slug) => {
+    setExpandedCollections((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+  };
+
   const sorted = React.useMemo(() => {
     let list = [...(opportunities || [])];
     if (filter === 'profitable') list = list.filter((o) => o.flipEstimate?.isProfitable);
@@ -22,6 +33,26 @@ export default function Scanner({ opportunities, scanning }) {
     else if (sort === 'profit') list.sort((a, b) => (b.flipEstimate?.profitPct || 0) - (a.flipEstimate?.profitPct || 0));
     return list;
   }, [opportunities, sort, filter]);
+
+  // Group sorted listings by collection, preserving inter-collection order by best score
+  const grouped = React.useMemo(() => {
+    const map = new Map();
+    for (const opp of sorted) {
+      const slug = opp.collectionSlug;
+      if (!map.has(slug)) {
+        map.set(slug, {
+          slug,
+          name: opp.collectionName,
+          image: opp.collectionImage,
+          floorPriceEth: opp.floorPriceEth,
+          oneDayVolume: opp.oneDayVolume,
+          listings: [],
+        });
+      }
+      map.get(slug).listings.push(opp);
+    }
+    return Array.from(map.values());
+  }, [sorted]);
 
   const handleScanNow = () => botApi.scan().catch((e) => alert(e.message));
 
@@ -148,15 +179,52 @@ export default function Scanner({ opportunities, scanning }) {
         </div>
       )}
 
-      <div style={styles.grid}>
-        {sorted.map((opp) => (
-          <OpportunityCard
-            key={opp.id}
-            opp={opp}
-            onBuy={handleBuy}
-            onBid={handleBidOpen}
-          />
-        ))}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {grouped.map((group) => {
+          const isExpanded = expandedCollections.has(group.slug);
+          const bestScore = group.listings[0]?.score ?? 0;
+          const scoreColor = bestScore >= 75 ? '#22c55e' : bestScore >= 50 ? '#eab308' : '#94a3b8';
+          return (
+            <div key={group.slug} style={styles.groupWrapper}>
+              {/* Collection header / toggle */}
+              <button style={styles.groupHeader} onClick={() => toggleCollection(group.slug)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                  {group.image && (
+                    <img src={group.image} alt="" style={styles.groupImg}
+                      onError={(e) => { e.target.style.display = 'none'; }} />
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={styles.groupName}>{group.name}</div>
+                    <div style={styles.groupMeta} className="mono">
+                      Floor {group.floorPriceEth?.toFixed(4)} ETH &nbsp;·&nbsp; Vol {(group.oneDayVolume || 0).toFixed(2)} ETH
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
+                  <span style={{ ...styles.groupBadge, color: scoreColor }}>
+                    best {bestScore}
+                  </span>
+                  <span style={styles.groupCount}>{group.listings.length} listing{group.listings.length !== 1 ? 's' : ''}</span>
+                  <span style={styles.chevron}>{isExpanded ? '▲' : '▼'}</span>
+                </div>
+              </button>
+
+              {/* Listings grid */}
+              {isExpanded && (
+                <div style={styles.grid}>
+                  {group.listings.map((opp) => (
+                    <OpportunityCard
+                      key={opp.id}
+                      opp={opp}
+                      onBuy={handleBuy}
+                      onBid={handleBidOpen}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Bid Modal */}
@@ -216,7 +284,15 @@ const styles = {
   select: { padding: '6px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontSize: 13 },
   scanningBanner: { background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 10, padding: '12px 16px', color: '#818cf8', fontSize: 13 },
   empty: { color: '#64748b', textAlign: 'center', padding: '48px 0', fontSize: 14 },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 },
+  groupWrapper: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, overflow: 'hidden' },
+  groupHeader: { width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', color: '#f1f5f9', cursor: 'pointer', textAlign: 'left' },
+  groupImg: { width: 36, height: 36, borderRadius: 7, objectFit: 'cover', flexShrink: 0 },
+  groupName: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  groupMeta: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  groupBadge: { fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' },
+  groupCount: { fontSize: 12, color: '#64748b', background: '#1e293b', borderRadius: 6, padding: '2px 8px' },
+  chevron: { fontSize: 10, color: '#64748b' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, padding: '0 16px 16px' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
   modal: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 16, padding: 28, width: 400, display: 'flex', flexDirection: 'column', gap: 14 },
   modalTitle: { fontSize: 18, fontWeight: 700 },
