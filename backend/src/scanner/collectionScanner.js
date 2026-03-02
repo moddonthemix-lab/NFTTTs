@@ -3,6 +3,7 @@ const { scoreOpportunity, estimateFlip, weiToEth } = require('../analyzer/scorer
 const config = require('../config');
 const logger = require('../utils/logger');
 const db = require('../utils/database');
+const walletUtils = require('../utils/wallet');
 
 let _emitter = null;
 
@@ -41,7 +42,7 @@ async function scanForOpportunities() {
     // Step 2: Build the full list of slugs to scan.
     // - Top 40 trending collections
     // - All watchlisted collections (always included, bypass volume filter)
-    const watchlist = db.getWatchlist();
+    const watchlist = db.getWatchlist(walletUtils.getWalletAddress());
     const watchlistSlugs = new Set(watchlist.map((w) => w.slug));
 
     const trendingSlugs = collections.slice(0, 40).map((c) => ({

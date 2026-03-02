@@ -280,18 +280,20 @@ app.post('/api/approvals/:id/reject', (req, res) => {
   }
 });
 
-// --- Favorites ---
-app.get('/api/favorites', (req, res) => res.json(db.getFavorites()));
+// --- Favorites (wallet-scoped) ---
+const wa = () => walletUtils.getWalletAddress(); // current wallet address or null
+
+app.get('/api/favorites', (req, res) => res.json(db.getFavorites(wa())));
 
 app.post('/api/favorites', (req, res) => {
   const opp = req.body;
   if (!opp || !opp.id) return res.status(400).json({ error: 'opportunity object with id required' });
-  db.addFavorite(opp);
+  db.addFavorite(wa(), opp);
   res.json({ success: true });
 });
 
 app.delete('/api/favorites/:id', (req, res) => {
-  db.removeFavorite(decodeURIComponent(req.params.id));
+  db.removeFavorite(wa(), decodeURIComponent(req.params.id));
   res.json({ success: true });
 });
 
@@ -373,18 +375,18 @@ app.get('/api/stats', (req, res) => {
   res.json(db.getStats());
 });
 
-// --- Watchlist ---
-app.get('/api/watchlist', (req, res) => res.json(db.getWatchlist()));
+// --- Watchlist (wallet-scoped) ---
+app.get('/api/watchlist', (req, res) => res.json(db.getWatchlist(wa())));
 
 app.post('/api/watchlist', (req, res) => {
   const { slug, name, imageUrl } = req.body;
   if (!slug) return res.status(400).json({ error: 'slug required' });
-  db.addToWatchlist({ slug, name, imageUrl });
+  db.addToWatchlist(wa(), { slug, name, imageUrl });
   res.json({ success: true });
 });
 
 app.delete('/api/watchlist/:slug', (req, res) => {
-  db.removeFromWatchlist(req.params.slug);
+  db.removeFromWatchlist(wa(), req.params.slug);
   res.json({ success: true });
 });
 

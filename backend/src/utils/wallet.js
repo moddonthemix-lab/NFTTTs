@@ -4,7 +4,8 @@ const path = require('path');
 const logger = require('./logger');
 const config = require('../config');
 
-const WALLET_FILE = path.join(__dirname, '../../data/wallet.json');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../../data');
+const WALLET_FILE = path.join(DATA_DIR, 'wallet.json');
 
 let _provider = null;
 let _wallet = null;
