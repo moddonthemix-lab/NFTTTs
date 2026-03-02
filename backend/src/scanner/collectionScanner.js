@@ -67,9 +67,10 @@ async function scanForOpportunities() {
         const oneDayVolume = stats.total?.one_day_volume || 0;
 
         // Apply collection-level filters now that we have real stats
-        if (oneDayVolume < config.scanner.minCollectionVolume) continue;
-        if (floorPrice < config.scanner.minFloorPrice) continue;
-        if (floorPrice > config.scanner.maxFloorPrice) continue;
+        if (oneDayVolume < config.scanner.minCollectionVolume) { logger.debug(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
+        if (floorPrice < config.scanner.minFloorPrice) { logger.debug(`${slug}: skipped (floor ${floorPrice} < ${config.scanner.minFloorPrice})`); continue; }
+        if (floorPrice > config.scanner.maxFloorPrice) { logger.debug(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
+        logger.info(`${slug}: floor=${floorPrice} ETH, vol=${oneDayVolume.toFixed(2)} ETH — scanning ${listings.length} listings`);
 
         for (const listing of listings) {
           const listingPriceEth = weiToEth(
@@ -82,7 +83,9 @@ async function scanForOpportunities() {
           const score = scoreOpportunity(listing, stats);
           const flipEstimate = estimateFlip(listingPriceEth, floorPrice);
 
-          if (score < 20 || !flipEstimate.isProfitable) continue;
+          // Only hard-filter truly junk scores; profitability is shown in the UI
+          // as a label so the user can decide — not used as a gate here.
+          if (score < 10) continue;
 
           const tokenId = listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria
             || listing.order_hash?.slice(0, 8);
