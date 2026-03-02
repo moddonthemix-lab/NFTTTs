@@ -10,11 +10,12 @@ if (!fs.existsSync(dataDir)) {
 }
 
 const defaultDb = {
-  portfolio: [],       // NFTs currently held
-  trades: [],          // completed trades (buy/sell history)
-  bids: [],            // active bids
-  pendingApprovals: [], // trades waiting for manual approval
-  watchlist: [],       // collections being watched
+  portfolio: [],
+  trades: [],
+  bids: [],
+  pendingApprovals: [],
+  watchlist: [],
+  favorites: [],
   stats: {
     totalBought: 0,
     totalSold: 0,
@@ -123,6 +124,24 @@ function updateApproval(id, status) {
   return approval;
 }
 
+function getFavorites() { return readDb().favorites || []; }
+
+function addFavorite(opp) {
+  const db = readDb();
+  if (!db.favorites) db.favorites = [];
+  if (!db.favorites.find((f) => f.id === opp.id)) {
+    db.favorites.push({ ...opp, savedAt: new Date().toISOString() });
+  }
+  writeDb(db);
+}
+
+function removeFavorite(id) {
+  const db = readDb();
+  if (!db.favorites) db.favorites = [];
+  db.favorites = db.favorites.filter((f) => f.id !== id);
+  writeDb(db);
+}
+
 function addToWatchlist(collection) {
   const db = readDb();
   if (!db.watchlist.find((c) => c.slug === collection.slug)) {
@@ -146,6 +165,9 @@ module.exports = {
   getPendingApprovals,
   getStats,
   getWatchlist,
+  getFavorites,
+  addFavorite,
+  removeFavorite,
   addToPortfolio,
   removeFromPortfolio,
   addTrade,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import OpportunityCard from '../components/OpportunityCard';
-import { botApi, bidsApi, tradesApi, scannerApi, watchlistApi } from '../utils/api';
+import { botApi, bidsApi, tradesApi, scannerApi, watchlistApi, favoritesApi } from '../utils/api';
 
 export default function Scanner({ opportunities, scanning }) {
   const [searchSlug, setSearchSlug] = useState('');
@@ -28,6 +28,53 @@ export default function Scanner({ opportunities, scanning }) {
     await watchlistApi.remove(slug).catch(() => {});
     setWatchlist((prev) => prev.filter((w) => w.slug !== slug));
   };
+
+  // Favorites
+  const [favorites, setFavorites] = useState(new Set());
+  useEffect(() => {
+    favoritesApi.get().then((list) => setFavorites(new Set(list.map((f) => f.id)))).catch(() => {});
+  }, []);
+  const isFavorited = (id) => favorites.has(id);
+  const handleToggleFavorite = async (opp) => {
+    if (favorites.has(opp.id)) {
+      await favoritesApi.remove(opp.id).catch(() => {});
+      setFavorites((prev) => { const n = new Set(prev); n.delete(opp.id); return n; });
+    } else {
+      await favoritesApi.add(opp).catch(() => {});
+      setFavorites((prev) => new Set([...prev, opp.id]));
+    }
+  };
+
+  // Sweep modal
+  const [sweepModal, setSweepModal] = useState(null); // { slug, name }
+  const [sweepCount, setSweepCount] = useState(3);
+  const [sweepMaxPrice, setSweepMaxPrice] = useState('');
+  const [sweepLoading, setSweepLoading] = useState(false);
+  const [sweepResult, setSweepResult] = useState(null);
+
+  const handleSnipe = async (slug, name) => {
+    if (!window.confirm(`Snipe floor of ${name}? This will immediately buy the cheapest listing.`)) return;
+    try {
+      const result = await tradesApi.snipe(slug);
+      alert(`Sniped! Paid ${result.priceEth?.toFixed(4)} ETH. TX: ${result.txHash}`);
+    } catch (err) {
+      alert(`Snipe failed: ${err.message}`);
+    }
+  };
+
+  const handleSweepSubmit = async () => {
+    if (!sweepModal) return;
+    setSweepLoading(true);
+    setSweepResult(null);
+    try {
+      const result = await tradesApi.sweep(sweepModal.slug, sweepCount, sweepMaxPrice || undefined);
+      setSweepResult(result);
+    } catch (err) {
+      alert(`Sweep failed: ${err.message}`);
+    }
+    setSweepLoading(false);
+  };
+
   const [sort, setSort] = useState('score');
   const [filter, setFilter] = useState('all');
   const [bidModal, setBidModal] = useState(null);
@@ -228,22 +275,42 @@ export default function Scanner({ opportunities, scanning }) {
             })}
           </div>
 
-          {/* Deep scan result */}
+          {/* Deep scan result — full cards with buy/bid/favorite */}
           {scannedResult && (
             <div style={styles.deepScan}>
-              <div style={styles.dsTitle}>
-                {scannedResult.collection?.name} — Floor: {scannedResult.stats?.total?.floor_price?.toFixed(4)} ETH
+              <div style={styles.dsTitleRow}>
+                <span style={styles.dsTitle}>{scannedResult.collection?.name} — Floor: {scannedResult.stats?.total?.floor_price?.toFixed(4)} ETH</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button style={styles.btnSnipe} onClick={() => handleSnipe(scannedResult.collection?.collection || searchSlug.trim(), scannedResult.collection?.name)}>⚡ Snipe</button>
+                  <button style={styles.btnSweep} onClick={() => { setSweepModal({ slug: scannedResult.collection?.collection || searchSlug.trim(), name: scannedResult.collection?.name }); setSweepResult(null); setSweepCount(3); setSweepMaxPrice(''); }}>▣ Sweep</button>
+                </div>
               </div>
-              <div style={styles.crGrid}>
-                {scannedResult.results?.slice(0, 10).map((r, i) => (
-                  <div key={i} style={styles.crItem}>
-                    <span style={styles.crScore} className="mono">{r.score}</span>
-                    <span className="mono">{r.priceEth?.toFixed(4)} ETH</span>
-                    <span style={{ color: r.flipEstimate?.isProfitable ? '#22c55e' : '#94a3b8' }} className="mono">
-                      {r.flipEstimate?.profitPct > 0 ? '+' : ''}{r.flipEstimate?.profitPct?.toFixed(1)}%
-                    </span>
-                  </div>
-                ))}
+              <div style={styles.grid}>
+                {scannedResult.results?.slice(0, 10).map((r, i) => {
+                  const slug = scannedResult.collection?.collection || searchSlug.trim();
+                  const opp = {
+                    id: r.listing?.order_hash || `${slug}_${i}`,
+                    collectionSlug: slug,
+                    collectionName: scannedResult.collection?.name || slug,
+                    collectionImage: scannedResult.collection?.image_url || '',
+                    listingPriceEth: r.priceEth,
+                    floorPriceEth: scannedResult.stats?.total?.floor_price || 0,
+                    score: r.score,
+                    flipEstimate: r.flipEstimate,
+                    oneDayVolume: 0,
+                    listing: r.listing,
+                  };
+                  return (
+                    <OpportunityCard
+                      key={opp.id}
+                      opp={opp}
+                      onBuy={handleBuy}
+                      onBid={handleBidOpen}
+                      onFavorite={handleToggleFavorite}
+                      isFavorited={isFavorited(opp.id)}
+                    />
+                  );
+                })}
               </div>
             </div>
           )}
@@ -308,11 +375,19 @@ export default function Scanner({ opportunities, scanning }) {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                  <span style={{ ...styles.groupBadge, color: scoreColor }}>
-                    best {bestScore}
-                  </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <span style={{ ...styles.groupBadge, color: scoreColor }}>best {bestScore}</span>
                   <span style={styles.groupCount}>{group.listings.length} listing{group.listings.length !== 1 ? 's' : ''}</span>
+                  <button
+                    style={styles.btnSnipe}
+                    onClick={(e) => { e.stopPropagation(); handleSnipe(group.slug, group.name); }}
+                    title="Snipe floor — buy the single cheapest listing now"
+                  >⚡ Snipe</button>
+                  <button
+                    style={styles.btnSweep}
+                    onClick={(e) => { e.stopPropagation(); setSweepModal({ slug: group.slug, name: group.name }); setSweepResult(null); setSweepCount(3); setSweepMaxPrice(''); }}
+                    title="Sweep — buy multiple from the floor"
+                  >▣ Sweep</button>
                   <button
                     style={isWatched(group.slug) ? styles.btnGroupUnwatch : styles.btnGroupWatch}
                     onClick={(e) => { e.stopPropagation(); handleToggleWatch(group.slug, group.name, group.image); }}
@@ -333,6 +408,8 @@ export default function Scanner({ opportunities, scanning }) {
                       opp={opp}
                       onBuy={handleBuy}
                       onBid={handleBidOpen}
+                      onFavorite={handleToggleFavorite}
+                      isFavorited={isFavorited(opp.id)}
                     />
                   ))}
                 </div>
@@ -341,6 +418,38 @@ export default function Scanner({ opportunities, scanning }) {
           );
         })}
       </div>
+
+      {/* Sweep Modal */}
+      {sweepModal && (
+        <div style={styles.overlay} onClick={() => { setSweepModal(null); setSweepResult(null); }}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>▣ Sweep — {sweepModal.name}</h2>
+            <div style={styles.modalInfo}>Buys the cheapest N listings sequentially from this collection.</div>
+            <label style={styles.label}>Number of NFTs (1–100)</label>
+            <input style={styles.input} type="number" min="1" max="100" value={sweepCount} onChange={(e) => setSweepCount(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))} />
+            <label style={styles.label}>Max price per NFT (ETH, leave blank for no limit)</label>
+            <input style={styles.input} type="number" step="0.001" placeholder="e.g. 0.5" value={sweepMaxPrice} onChange={(e) => setSweepMaxPrice(e.target.value)} />
+            {sweepResult && (
+              <div style={{ background: '#0f172a', borderRadius: 8, padding: 12, fontSize: 13 }}>
+                <div style={{ color: '#22c55e', fontWeight: 700, marginBottom: 6 }}>
+                  Bought {sweepResult.bought} / {sweepResult.attempted}
+                </div>
+                {sweepResult.results?.map((r, i) => (
+                  <div key={i} style={{ color: r.success ? '#94a3b8' : '#ef4444', marginBottom: 2 }} className="mono">
+                    #{i + 1} {r.priceEth?.toFixed(4)} ETH — {r.success ? `✓ ${r.txHash?.slice(0, 10)}…` : `✗ ${r.error}`}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={styles.modalActions}>
+              <button style={styles.btnCancel} onClick={() => { setSweepModal(null); setSweepResult(null); }}>Close</button>
+              <button style={styles.btnBid} onClick={handleSweepSubmit} disabled={sweepLoading}>
+                {sweepLoading ? `Buying…` : `Sweep ${sweepCount}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bid Modal */}
       {bidModal && (
@@ -414,7 +523,10 @@ const styles = {
   srScanBtn: { padding: '4px 12px', borderRadius: 6, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
   srSearching: { color: '#64748b', fontSize: 13, textAlign: 'center', padding: '12px 0' },
   deepScan: { padding: 14, borderTop: '1px solid #1e293b', background: '#070d1a' },
-  dsTitle: { fontWeight: 600, fontSize: 13, marginBottom: 10 },
+  dsTitleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' },
+  dsTitle: { fontWeight: 600, fontSize: 13 },
+  btnSnipe: { padding: '4px 10px', borderRadius: 6, border: 'none', background: '#854d0e', color: '#fbbf24', fontSize: 12, fontWeight: 700, cursor: 'pointer' },
+  btnSweep: { padding: '4px 10px', borderRadius: 6, border: 'none', background: '#1e3a5f', color: '#60a5fa', fontSize: 12, fontWeight: 700, cursor: 'pointer' },
   crGrid: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   crItem: { background: '#1e293b', borderRadius: 8, padding: '6px 12px', display: 'flex', gap: 10, fontSize: 13 },
   crScore: { color: '#6366f1', fontWeight: 700 },

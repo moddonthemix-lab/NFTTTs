@@ -10,6 +10,7 @@ import Bids from './pages/Bids';
 import Trades from './pages/Trades';
 import Wallet from './pages/Wallet';
 import Logs from './pages/Logs';
+import Favorites from './pages/Favorites';
 import { useSocket } from './hooks/useSocket';
 
 // AppInner only mounts after PasswordGate auth passes, so
@@ -58,6 +59,7 @@ function AppInner() {
               path="/scanner"
               element={<Scanner opportunities={opportunities} scanning={scanning} />}
             />
+            <Route path="/favorites" element={<Favorites />} />
             <Route
               path="/portfolio"
               element={<Portfolio portfolio={portfolio} />}

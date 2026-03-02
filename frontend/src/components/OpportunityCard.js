@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function OpportunityCard({ opp, onBuy, onBid }) {
+export default function OpportunityCard({ opp, onBuy, onBid, onFavorite, isFavorited }) {
   const profitPct = opp.flipEstimate?.profitPct || 0;
   const isProfitable = opp.flipEstimate?.isProfitable;
 
@@ -21,9 +21,20 @@ export default function OpportunityCard({ opp, onBuy, onBid }) {
             {opp.tokenId ? `#${opp.tokenId}` : opp.collectionSlug}
           </div>
         </div>
-        <div style={{ ...styles.score, color: scoreColor }}>
-          <div style={styles.scoreNum}>{opp.score}</div>
-          <div style={styles.scoreLabel}>score</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <div style={{ ...styles.score, color: scoreColor }}>
+            <div style={styles.scoreNum}>{opp.score}</div>
+            <div style={styles.scoreLabel}>score</div>
+          </div>
+          {onFavorite && (
+            <button
+              style={{ ...styles.heartBtn, color: isFavorited ? '#f43f5e' : '#475569' }}
+              onClick={() => onFavorite(opp)}
+              title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              {isFavorited ? '♥' : '♡'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -82,6 +93,7 @@ const styles = {
   metric: { background: '#1e293b', borderRadius: 8, padding: '8px 10px' },
   metricLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   metricValue: { fontSize: 13, fontWeight: 600 },
+  heartBtn: { background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '2px 4px' },
   actions: { display: 'flex', gap: 8 },
   btnBuy: {
     flex: 1, padding: '8px 0', borderRadius: 8, border: 'none',

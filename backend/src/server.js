@@ -14,6 +14,7 @@ const { scanForOpportunities, scanCollection, setEmitter: setScanEmitter } = req
 const openSeaApi = require('./scanner/openSeaApi');
 const botEngine = require('./trader/botEngine');
 const { buyNFT, placeBid, sellNFT, cancelOrder } = require('./trader/seaportTrader');
+const { weiToEth } = require('./analyzer/scorer');
 
 const isProd = process.env.NODE_ENV === 'production';
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
@@ -274,6 +275,69 @@ app.post('/api/approvals/:id/reject', (req, res) => {
   try {
     const result = botEngine.rejectAction(req.params.id);
     res.json({ success: true, approval: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Favorites ---
+app.get('/api/favorites', (req, res) => res.json(db.getFavorites()));
+
+app.post('/api/favorites', (req, res) => {
+  const opp = req.body;
+  if (!opp || !opp.id) return res.status(400).json({ error: 'opportunity object with id required' });
+  db.addFavorite(opp);
+  res.json({ success: true });
+});
+
+app.delete('/api/favorites/:id', (req, res) => {
+  db.removeFavorite(decodeURIComponent(req.params.id));
+  res.json({ success: true });
+});
+
+// --- Snipe Floor (buy single cheapest listing) ---
+app.post('/api/trade/snipe/:slug', async (req, res) => {
+  const { slug } = req.params;
+  try {
+    const listings = await openSeaApi.getCheapestListings(slug, 1);
+    if (!listings.length) return res.status(404).json({ error: 'No listings found for this collection' });
+    const listing = listings[0];
+    const priceEth = weiToEth(listing.price?.current?.value, listing.price?.current?.decimals);
+    const result = await buyNFT(listing);
+    db.addTrade({ type: 'buy', collectionSlug: slug, priceEth, txHash: result.txHash, source: 'snipe' });
+    io.emit('trade:buy', { ...result, collectionSlug: slug, priceEth, source: 'snipe' });
+    res.json({ success: true, ...result, priceEth, listing });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Sweep Floor (buy N cheapest listings) ---
+app.post('/api/trade/sweep', async (req, res) => {
+  const { slug, count = 1, maxPriceEth } = req.body;
+  if (!slug) return res.status(400).json({ error: 'slug is required' });
+  const cap = Math.min(Math.max(1, parseInt(count) || 1), 100);
+  try {
+    const listings = await openSeaApi.getCheapestListings(slug, cap * 2); // fetch extra in case some are filtered
+    const eligible = listings.filter((l) => {
+      const price = weiToEth(l.price?.current?.value, l.price?.current?.decimals);
+      return price > 0 && (!maxPriceEth || price <= parseFloat(maxPriceEth));
+    }).slice(0, cap);
+    if (!eligible.length) return res.status(404).json({ error: 'No eligible listings found within price limit' });
+
+    const results = [];
+    for (const listing of eligible) {
+      const priceEth = weiToEth(listing.price?.current?.value, listing.price?.current?.decimals);
+      try {
+        const buyResult = await buyNFT(listing);
+        db.addTrade({ type: 'buy', collectionSlug: slug, priceEth, txHash: buyResult.txHash, source: 'sweep' });
+        io.emit('trade:buy', { ...buyResult, collectionSlug: slug, priceEth, source: 'sweep' });
+        results.push({ success: true, priceEth, txHash: buyResult.txHash });
+      } catch (err) {
+        results.push({ success: false, priceEth, error: err.message });
+      }
+    }
+    res.json({ results, bought: results.filter((r) => r.success).length, attempted: eligible.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

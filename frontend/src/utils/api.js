@@ -41,6 +41,14 @@ export const tradesApi = {
   get: (limit = 100) => api.get('/trades', { params: { limit } }).then((r) => r.data),
   buy: (listing) => api.post('/trade/buy', { listing }).then((r) => r.data),
   sell: (contractAddress, tokenId, priceEth) => api.post('/trade/sell', { contractAddress, tokenId, priceEth }).then((r) => r.data),
+  snipe: (slug) => api.post(`/trade/snipe/${slug}`).then((r) => r.data),
+  sweep: (slug, count, maxPriceEth) => api.post('/trade/sweep', { slug, count, maxPriceEth }).then((r) => r.data),
+};
+
+export const favoritesApi = {
+  get: () => api.get('/favorites').then((r) => r.data),
+  add: (opp) => api.post('/favorites', opp).then((r) => r.data),
+  remove: (id) => api.delete(`/favorites/${encodeURIComponent(id)}`).then((r) => r.data),
 };
 
 export const bidsApi = {

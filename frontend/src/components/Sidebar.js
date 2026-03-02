@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom';
 const NAV = [
   { path: '/', label: 'Dashboard', icon: '◈' },
   { path: '/scanner', label: 'Scanner', icon: '⊕' },
+  { path: '/favorites', label: 'Favorites', icon: '♥' },
   { path: '/portfolio', label: 'Portfolio', icon: '◇' },
   { path: '/approvals', label: 'Approvals', icon: '◉' },
   { path: '/bids', label: 'Bids', icon: '⊖' },
