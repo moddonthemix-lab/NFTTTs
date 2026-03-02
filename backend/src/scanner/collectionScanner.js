@@ -30,23 +30,12 @@ async function scanForOpportunities() {
     // Step 1: Get trending collections
     const collections = await openSeaApi.getTrendingCollections(60);
     logger.info(`Fetched ${collections.length} trending collections`);
+    emit('scan:collections', { count: collections.length, collections: collections.slice(0, 20) });
 
-    // Step 2: Filter collections by config criteria
-    const filtered = collections.filter((col) => {
-      const vol = col.stats?.one_day_volume || col.one_day_volume || 0;
-      const floor = col.stats?.floor_price || col.floor_price || 0;
-      return (
-        vol >= config.scanner.minCollectionVolume &&
-        floor >= config.scanner.minFloorPrice &&
-        floor <= config.scanner.maxFloorPrice
-      );
-    });
-
-    logger.info(`${filtered.length} collections passed filters`);
-    emit('scan:collections', { count: filtered.length, collections: filtered.slice(0, 20) });
-
-    // Step 3: For each collection, get stats + cheap listings
-    for (const col of filtered.slice(0, 25)) {
+    // Step 2: For each collection fetch real stats THEN filter.
+    // The trending-collections endpoint does NOT embed stats, so we must
+    // call getCollectionStats first before applying volume/floor filters.
+    for (const col of collections.slice(0, 20)) {
       try {
         const slug = col.collection || col.slug;
         if (!slug) continue;
@@ -59,6 +48,12 @@ async function scanForOpportunities() {
         if (!stats || !listings.length) continue;
 
         const floorPrice = stats.total?.floor_price || 0;
+        const oneDayVolume = stats.total?.one_day_volume || 0;
+
+        // Apply collection-level filters now that we have real stats
+        if (oneDayVolume < config.scanner.minCollectionVolume) continue;
+        if (floorPrice < config.scanner.minFloorPrice) continue;
+        if (floorPrice > config.scanner.maxFloorPrice) continue;
 
         for (const listing of listings) {
           const listingPriceEth = weiToEth(
@@ -66,10 +61,7 @@ async function scanForOpportunities() {
             listing.price?.current?.decimals
           );
 
-          if (
-            listingPriceEth <= 0 ||
-            listingPriceEth > config.trading.maxBuyPriceEth
-          ) continue;
+          if (listingPriceEth <= 0 || listingPriceEth > config.trading.maxBuyPriceEth) continue;
 
           const score = scoreOpportunity(listing, stats);
           const flipEstimate = estimateFlip(listingPriceEth, floorPrice);
@@ -81,7 +73,7 @@ async function scanForOpportunities() {
 
           const contractAddress =
             listing.protocol_data?.parameters?.offer?.[0]?.token
-            || col.primary_asset_contracts?.[0]?.address
+            || col.contracts?.[0]?.address
             || '';
 
           opportunities.push({
@@ -95,7 +87,7 @@ async function scanForOpportunities() {
             floorPriceEth: floorPrice,
             score,
             flipEstimate,
-            oneDayVolume: stats.total?.one_day_volume || 0,
+            oneDayVolume,
             oneDaySales: stats.total?.one_day_sales || 0,
             oneDayChange: stats.total?.one_day_change || 0,
             listing,
@@ -103,11 +95,11 @@ async function scanForOpportunities() {
           });
         }
       } catch (err) {
-        logger.warn(`Error scanning collection ${col.collection}: ${err.message}`);
+        logger.warn(`Error scanning collection ${col.collection || col.slug}: ${err.message}`);
       }
     }
 
-    // Step 4: Sort by score desc
+    // Step 3: Sort by score desc
     opportunities.sort((a, b) => b.score - a.score);
 
     logger.info(`Scan complete. Found ${opportunities.length} opportunities.`);
