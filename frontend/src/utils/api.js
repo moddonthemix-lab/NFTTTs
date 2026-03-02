@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+// In production the frontend is served by the same Express server (same origin).
+// In local dev, point to the separate backend dev port.
+const BASE = process.env.REACT_APP_API_URL
+  || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001');
 
 const api = axios.create({ baseURL: `${BASE}/api` });
 

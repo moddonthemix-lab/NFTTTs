@@ -14,9 +14,14 @@ const { scanForOpportunities, scanCollection, setEmitter: setScanEmitter } = req
 const botEngine = require('./trader/botEngine');
 const { buyNFT, placeBid, sellNFT, cancelOrder } = require('./trader/seaportTrader');
 
+const isProd = process.env.NODE_ENV === 'production';
+
 // --- Express Setup ---
 const app = express();
-app.use(cors({ origin: config.server.frontendUrl, credentials: true }));
+app.use(cors({
+  origin: isProd ? true : config.server.frontendUrl,
+  credentials: true,
+}));
 app.use(express.json());
 
 // Ensure logs dir exists
@@ -25,7 +30,10 @@ if (!fs.existsSync('logs')) fs.mkdirSync('logs');
 // --- HTTP + Socket.IO ---
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
-  cors: { origin: config.server.frontendUrl, methods: ['GET', 'POST'] },
+  cors: {
+    origin: isProd ? true : config.server.frontendUrl,
+    methods: ['GET', 'POST'],
+  },
 });
 
 // Wire emitters
@@ -284,8 +292,23 @@ app.delete('/api/watchlist/:slug', (req, res) => {
 // --- Health ---
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
+// --- Serve React frontend in production ---
+if (isProd) {
+  const frontendBuild = path.join(__dirname, '../../frontend/build');
+  if (fs.existsSync(frontendBuild)) {
+    app.use(express.static(frontendBuild));
+    app.get('*', (req, res) => {
+      if (!req.path.startsWith('/api') && !req.path.startsWith('/socket.io')) {
+        res.sendFile(path.join(frontendBuild, 'index.html'));
+      }
+    });
+    logger.info('Serving React frontend from build/');
+  }
+}
+
 // --- Start server ---
-const PORT = config.server.port;
+// Railway injects PORT automatically; fallback to config for local dev
+const PORT = process.env.PORT || config.server.port;
 httpServer.listen(PORT, () => {
   logger.info(`NFT Trading Bot server running on port ${PORT}`);
 

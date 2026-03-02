@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+// In production the socket connects to the same origin (Railway URL).
+// In local dev, point to the backend dev port.
+const SOCKET_URL = process.env.REACT_APP_API_URL
+  || (process.env.NODE_ENV === 'production' ? window.location.origin : 'http://localhost:3001');
 
 export function useSocket() {
   const socketRef = useRef(null);
