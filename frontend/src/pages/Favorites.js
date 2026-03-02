@@ -15,8 +15,8 @@ export default function Favorites() {
   useEffect(() => {
     favoritesApi.get().then((list) => {
       setFavorites(list);
-      // auto-expand all collections on first load
-      const slugs = new Set(list.map((f) => f.collectionSlug || 'unknown'));
+      // auto-expand all NFT opportunity collection groups on first load
+      const slugs = new Set(list.filter(f => f.type !== 'collection').map((f) => f.collectionSlug || 'unknown'));
       setExpandedCollections(slugs);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
@@ -65,13 +65,23 @@ export default function Favorites() {
     setActionLoading(null);
   };
 
-  // Sort and group by collection
+  // Separate collection bookmarks from NFT opportunity favorites
+  const collectionFavs = React.useMemo(() =>
+    favorites.filter(f => f.type === 'collection').sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0)),
+  [favorites]);
+
+  const handleRemoveCollectionFav = async (id) => {
+    await favoritesApi.remove(id).catch(() => {});
+    setFavorites((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  // Sort and group NFT opportunities by collection
   const sorted = React.useMemo(() => {
-    const list = [...favorites];
+    const list = favorites.filter(f => f.type !== 'collection');
     if (sort === 'score') list.sort((a, b) => (b.score || 0) - (a.score || 0));
     else if (sort === 'price') list.sort((a, b) => (a.listingPriceEth || 0) - (b.listingPriceEth || 0));
     else if (sort === 'profit') list.sort((a, b) => (b.flipEstimate?.profitPct || 0) - (a.flipEstimate?.profitPct || 0));
-    else list.sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0)); // 'saved' — newest first
+    else list.sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0));
     return list;
   }, [favorites, sort]);
 
@@ -117,8 +127,38 @@ export default function Favorites() {
 
       {!loading && favorites.length === 0 && (
         <div style={styles.empty}>
-          No favorites yet. Hit ♡ on any opportunity card in the Scanner to save it here.
+          No favorites yet. Hit ♡ on collection headers or opportunity cards in the Scanner to save here.
         </div>
+      )}
+
+      {/* Bookmarked Collections */}
+      {collectionFavs.length > 0 && (
+        <div>
+          <div style={styles.sectionTitle}>Collections</div>
+          <div style={styles.colFavGrid}>
+            {collectionFavs.map((col) => (
+              <div key={col.id} style={styles.colFavCard}>
+                {col.collectionImage
+                  ? <img src={col.collectionImage} alt="" style={styles.colFavImg} onError={(e) => { e.target.style.display = 'none'; }} />
+                  : <div style={styles.colFavImgPlaceholder} />
+                }
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.colFavName}>{col.collectionName || col.collectionSlug}</div>
+                  <div style={styles.colFavMeta} className="mono">
+                    {col.floorPriceEth ? `Floor ${col.floorPriceEth.toFixed(4)} ETH` : col.collectionSlug}
+                    {col.chain === 'base' && <span style={styles.chainBadge}>BASE</span>}
+                  </div>
+                </div>
+                <button style={styles.colFavRemove} onClick={() => handleRemoveCollectionFav(col.id)} title="Remove">♥</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* NFT Opportunity favorites, grouped by collection */}
+      {sorted.length > 0 && collectionFavs.length > 0 && (
+        <div style={styles.sectionTitle}>NFT Opportunities</div>
       )}
 
       {/* Collection groups */}
@@ -197,6 +237,15 @@ const styles = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
   h1: { fontSize: 24, fontWeight: 700 },
   sub: { color: '#64748b', fontSize: 13, marginTop: 2 },
+  sectionTitle: { fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 8 },
+  colFavGrid: { display: 'flex', flexDirection: 'column', gap: 6 },
+  colFavCard: { display: 'flex', alignItems: 'center', gap: 12, background: '#0f172a', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 14px' },
+  colFavImg: { width: 40, height: 40, borderRadius: 8, objectFit: 'cover', flexShrink: 0 },
+  colFavImgPlaceholder: { width: 40, height: 40, borderRadius: 8, background: '#1e293b', flexShrink: 0 },
+  colFavName: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  colFavMeta: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  colFavRemove: { background: '#7f1d1d', border: 'none', color: '#f87171', borderRadius: 6, padding: '4px 8px', fontSize: 13, cursor: 'pointer', flexShrink: 0 },
+  chainBadge: { display: 'inline-block', marginLeft: 6, padding: '1px 5px', borderRadius: 4, background: '#1e3a5f', color: '#60a5fa', fontSize: 9, fontWeight: 700, letterSpacing: 0.5 },
   count: { background: '#1e293b', color: '#94a3b8', borderRadius: 8, padding: '4px 12px', fontSize: 13 },
   select: { padding: '6px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontSize: 13 },
   empty: { color: '#64748b', textAlign: 'center', padding: '48px 0', fontSize: 14 },

@@ -37,24 +37,34 @@ async function getEthPriceUsd() {
   const now = Date.now();
   if (_ethPriceUsd && now - _ethPriceAt < 5 * 60 * 1000) return _ethPriceUsd;
 
-  // Binance public API — no key, very reliable
+  // Try multiple sources in order, return as soon as one succeeds.
+
+  // 1. Binance — no key, very reliable globally
   try {
-    const r = await axios.get(
-      'https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT',
-      { timeout: 4000 }
-    );
+    const r = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT', { timeout: 4000 });
     const price = parseFloat(r.data?.price);
     if (price > 0) { _ethPriceUsd = price; _ethPriceAt = now; return _ethPriceUsd; }
-  } catch { /* fall through to backup */ }
+  } catch { /* try next */ }
 
-  // CoinGecko fallback
+  // 2. Coinbase — public endpoint, no key
   try {
-    const r = await axios.get(
-      'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-      { timeout: 5000 }
-    );
+    const r = await axios.get('https://api.coinbase.com/v2/prices/ETH-USD/spot', { timeout: 4000 });
+    const price = parseFloat(r.data?.data?.amount);
+    if (price > 0) { _ethPriceUsd = price; _ethPriceAt = now; return _ethPriceUsd; }
+  } catch { /* try next */ }
+
+  // 3. CryptoCompare — generous free tier
+  try {
+    const r = await axios.get('https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=USD', { timeout: 4000 });
+    const price = r.data?.USD;
+    if (price > 0) { _ethPriceUsd = price; _ethPriceAt = now; return _ethPriceUsd; }
+  } catch { /* try next */ }
+
+  // 4. CoinGecko — lowest priority (strict rate limits on free tier)
+  try {
+    const r = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd', { timeout: 5000 });
     const price = r.data?.ethereum?.usd;
-    if (price) { _ethPriceUsd = price; _ethPriceAt = now; }
+    if (price > 0) { _ethPriceUsd = price; _ethPriceAt = now; }
   } catch { /* keep stale value */ }
 
   return _ethPriceUsd;

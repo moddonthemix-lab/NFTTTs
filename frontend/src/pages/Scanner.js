@@ -34,12 +34,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
     }
   };
 
-  const handleRemoveWatch = async (slug) => {
-    await watchlistApi.remove(slug).catch(() => {});
-    setWatchlist((prev) => prev.filter((w) => w.slug !== slug));
-  };
-
-  // Favorites
+  // Favorites (individual NFT opportunities)
   const [favorites, setFavorites] = useState(new Set());
   useEffect(() => {
     favoritesApi.get().then((list) => setFavorites(new Set(list.map((f) => f.id)))).catch(() => {});
@@ -52,6 +47,28 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
     } else {
       await favoritesApi.add(opp).catch(() => {});
       setFavorites((prev) => new Set([...prev, opp.id]));
+    }
+  };
+
+  // Collection-level favorites (bookmark a whole collection)
+  const collectionFavId = (slug) => `col:${slug}`;
+  const isCollectionFavorited = (slug) => favorites.has(collectionFavId(slug));
+  const handleToggleCollectionFavorite = async (group) => {
+    const id = collectionFavId(group.slug);
+    if (favorites.has(id)) {
+      await favoritesApi.remove(id).catch(() => {});
+      setFavorites((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    } else {
+      await favoritesApi.add({
+        id,
+        type: 'collection',
+        collectionSlug: group.slug,
+        collectionName: group.name,
+        collectionImage: group.image || '',
+        floorPriceEth: group.floorPriceEth || 0,
+        chain: group.chain || 'ethereum',
+      }).catch(() => {});
+      setFavorites((prev) => new Set([...prev, id]));
     }
   };
 
@@ -217,22 +234,6 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
           ) : '⊕ Run Scan'}
         </button>
       </div>
-
-      {/* Watchlist panel */}
-      {watchlist.length > 0 && (
-        <div style={styles.watchlistPanel}>
-          <div style={styles.watchlistTitle}>Sniping ({watchlist.length})</div>
-          <div style={styles.watchlistChips}>
-            {watchlist.map((w) => (
-              <div key={w.slug} style={styles.watchChip}>
-                {w.imageUrl && <img src={w.imageUrl} alt="" style={styles.watchChipImg} onError={(e) => { e.target.style.display = 'none'; }} />}
-                <span style={styles.watchChipName}>{w.name || w.slug}</span>
-                <button style={styles.watchChipRemove} onClick={() => handleRemoveWatch(w.slug)} title="Remove">×</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Search */}
       <div style={styles.searchBox}>
@@ -439,11 +440,11 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                     title="Sweep — buy multiple from the floor"
                   >▣ Sweep</button>
                   <button
-                    style={isWatched(group.slug) ? styles.btnGroupUnwatch : styles.btnGroupWatch}
-                    onClick={(e) => { e.stopPropagation(); handleToggleWatch(group.slug, group.name, group.image); }}
-                    title={isWatched(group.slug) ? 'Remove from snipe list' : 'Add to snipe list'}
+                    style={isCollectionFavorited(group.slug) ? styles.btnGroupFavActive : styles.btnGroupFav}
+                    onClick={(e) => { e.stopPropagation(); handleToggleCollectionFavorite(group); }}
+                    title={isCollectionFavorited(group.slug) ? 'Remove from Favorites' : 'Save to Favorites'}
                   >
-                    {isWatched(group.slug) ? '★' : '☆'}
+                    {isCollectionFavorited(group.slug) ? '♥' : '♡'}
                   </button>
                   <span style={styles.chevron}>{isExpanded ? '▲' : '▼'}</span>
                 </div>
@@ -586,6 +587,8 @@ const styles = {
   btnUnwatch: { padding: '4px 12px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
   btnGroupWatch: { padding: '3px 8px', borderRadius: 6, border: '1px solid #334155', background: 'transparent', color: '#64748b', fontSize: 13, cursor: 'pointer' },
   btnGroupUnwatch: { padding: '3px 8px', borderRadius: 6, border: 'none', background: '#6366f1', color: '#fff', fontSize: 13, cursor: 'pointer' },
+  btnGroupFav: { padding: '3px 8px', borderRadius: 6, border: '1px solid #334155', background: 'transparent', color: '#64748b', fontSize: 14, cursor: 'pointer' },
+  btnGroupFavActive: { padding: '3px 8px', borderRadius: 6, border: 'none', background: '#7f1d1d', color: '#f87171', fontSize: 14, cursor: 'pointer' },
   searchResultsPanel: { background: '#0f172a', border: '1px solid #334155', borderRadius: 12, overflow: 'hidden' },
   srHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', fontSize: 12, color: '#64748b', borderBottom: '1px solid #1e293b' },
   srClose: { background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 16, lineHeight: 1 },
