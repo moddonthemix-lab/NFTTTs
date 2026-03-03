@@ -85,9 +85,9 @@ async function scanForOpportunities() {
         if (!stats || !listings.length) continue;
 
         const floorPrice = stats.total?.floor_price || 0;
-        const oneHourInterval = stats.intervals?.find((i) => i.interval === 'one_hour') || {};
         const oneDayInterval = stats.intervals?.find((i) => i.interval === 'one_day') || {};
         const sevenDayInterval = stats.intervals?.find((i) => i.interval === 'seven_day') || {};
+        const oneHourInterval = stats.intervals?.find((i) => i.interval === 'one_hour') || {};
         const oneDayVolume = oneDayInterval.volume || 0;
         // Realistic exit = avg sale price (what buyers pay), not floor (cheapest ask)
         const avgSalePrice =
@@ -173,7 +173,7 @@ async function scanForOpportunities() {
 }
 
 /**
- * Detailed scan of a single collection
+ * Detailed scan of a single collection — includes best offer, rarity for top 5
  */
 async function scanCollection(slug, chain = 'ethereum') {
   try {
@@ -194,10 +194,7 @@ async function scanCollection(slug, chain = 'ethereum') {
 
     const mapped = listings
       .map((listing) => {
-        const priceEth = weiToEth(
-          listing.price?.current?.value,
-          listing.price?.current?.decimals
-        );
+        const priceEth = weiToEth(listing.price?.current?.value, listing.price?.current?.decimals);
         const score = scoreOpportunity(listing, stats);
         const flipEstimate = estimateFlip(priceEth, avgSalePrice);
         const contractAddress = listing.protocol_data?.parameters?.offer?.[0]?.token || '';
@@ -214,14 +211,13 @@ async function scanCollection(slug, chain = 'ethereum') {
       top5.map(async (r) => {
         if (!r.contractAddress || !r.tokenId) return r;
         const rarity = await openSeaApi.getNFTRarity(r.contractAddress, r.tokenId, chain).catch(() => null);
-        if (!rarity) return r;
-        const isRare = rarity.rank <= Math.max(1, Math.round((rarity.maxRank || 0) * 0.10));
+        if (!rarity || !rarity.maxRank) return r;
+        const isRare = rarity.rank <= Math.max(1, Math.round(rarity.maxRank * 0.10));
         return { ...r, rarityRank: rarity.rank, rarityTotal: rarity.maxRank, isRare };
       })
     );
 
-    const results = [...top5WithRarity, ...rest];
-    return { collection, stats, bestOfferEth, liquidity, results };
+    return { collection, stats, bestOfferEth, liquidity, results: [...top5WithRarity, ...rest] };
   } catch (err) {
     logger.error(`scanCollection(${slug}) failed: ${err.message}`);
     return null;

@@ -166,7 +166,7 @@ export default function Favorites() {
         {grouped.map((group) => {
           const isExpanded = expandedCollections.has(group.slug);
           const best = group.listings[0];
-          const bestGrade = best?.dealGrade || (() => { const s = best?.score ?? 0; return s >= 75 ? 'A' : s >= 55 ? 'B' : s >= 35 ? 'C' : s >= 20 ? 'D' : 'F'; })();
+          const bestGrade = best?.dealGrade || (best?.score >= 75 ? 'A' : best?.score >= 55 ? 'B' : best?.score >= 35 ? 'C' : best?.score >= 20 ? 'D' : 'F');
           const gradeColor = { A: '#22c55e', B: '#3b82f6', C: '#eab308', D: '#f97316', F: '#ef4444' }[bestGrade] || '#94a3b8';
           return (
             <div key={group.slug} style={styles.groupWrapper}>

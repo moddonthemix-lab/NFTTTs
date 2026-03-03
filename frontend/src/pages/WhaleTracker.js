@@ -185,8 +185,8 @@ export default function WhaleTracker({ ethPrice }) {
                             <span style={styles.summaryUsd}>{fmtUsd(data.netValueEth, ethPrice)}</span>
                           )}
                         </div>
-                        {data.totalNfts >= 200 && (
-                          <div style={styles.truncNote}>Showing first 200 NFTs</div>
+                        {data.totalNfts >= 400 && (
+                          <div style={styles.truncNote}>Showing first 400 NFTs</div>
                         )}
                       </div>
 

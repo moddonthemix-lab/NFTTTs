@@ -322,7 +322,7 @@ module.exports = {
   getOffers,
   getBestListing,
   getCollection,
-  getEthPriceUsd,
   getCollectionBestOffer,
   getNFTRarity,
+  getEthPriceUsd,
 };

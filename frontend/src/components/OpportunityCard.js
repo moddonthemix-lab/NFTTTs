@@ -1,14 +1,14 @@
 import React from 'react';
 
+const GRADE_COLOR = { A: '#22c55e', B: '#3b82f6', C: '#eab308', D: '#f97316', F: '#ef4444' };
+const GRADE_BG    = { A: 'rgba(34,197,94,0.12)', B: 'rgba(59,130,246,0.12)', C: 'rgba(234,179,8,0.12)', D: 'rgba(249,115,22,0.12)', F: 'rgba(239,68,68,0.12)' };
+const LIQ_COLOR   = { High: '#22c55e', Med: '#eab308', Low: '#ef4444' };
+
 const fmtUsd = (eth, price) => {
   if (!price || !eth) return null;
   const usd = eth * price;
   return usd >= 1000 ? `≈ $${Math.round(usd).toLocaleString()}` : `≈ $${usd.toFixed(2)}`;
 };
-
-const GRADE_COLOR = { A: '#22c55e', B: '#3b82f6', C: '#eab308', D: '#f97316', F: '#ef4444' };
-const GRADE_BG    = { A: 'rgba(34,197,94,0.12)', B: 'rgba(59,130,246,0.12)', C: 'rgba(234,179,8,0.12)', D: 'rgba(249,115,22,0.12)', F: 'rgba(239,68,68,0.12)' };
-const LIQ_COLOR   = { High: '#22c55e', Med: '#eab308', Low: '#ef4444' };
 
 function getDealGrade(opp) {
   if (opp.dealGrade) return opp.dealGrade;
@@ -25,9 +25,9 @@ export default function OpportunityCard({ opp, onBuy, onBid, onFavorite, isFavor
   const isProfitable = opp.flipEstimate?.isProfitable;
   const grade = getDealGrade(opp);
   const liq = opp.liquidity;
+  const bestOffer = opp.bestOfferEth;
   const changeDay = opp.oneDayChange || 0;
   const changeHour = opp.oneHourChange || 0;
-  const bestOffer = opp.bestOfferEth;
 
   return (
     <div style={styles.card} className="animate-fadeIn">
@@ -42,7 +42,7 @@ export default function OpportunityCard({ opp, onBuy, onBid, onFavorite, isFavor
             {opp.tokenId ? `#${opp.tokenId}` : opp.collectionSlug}
             {opp.isRare && (
               <span style={styles.rareBadge} title={`Rarity rank #${opp.rarityRank} of ${opp.rarityTotal}`}>
-                ✦ RARE
+                {' '}✦ RARE
               </span>
             )}
           </div>
@@ -149,7 +149,7 @@ const styles = {
     padding: 16,
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
+    gap: 10,
     transition: 'border-color 0.2s',
   },
   header: { display: 'flex', alignItems: 'center', gap: 10 },
@@ -157,7 +157,7 @@ const styles = {
   info: { flex: 1, overflow: 'hidden' },
   name: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   tokenId: { fontSize: 11, color: '#64748b', marginTop: 2 },
-  rareBadge: { display: 'inline-block', marginLeft: 6, padding: '1px 5px', borderRadius: 4, background: 'rgba(234,179,8,0.15)', color: '#eab308', fontSize: 9, fontWeight: 700, letterSpacing: 0.5 },
+  rareBadge: { display: 'inline', padding: '1px 5px', borderRadius: 4, background: 'rgba(234,179,8,0.15)', color: '#eab308', fontSize: 9, fontWeight: 700, letterSpacing: 0.5 },
   gradeBadge: { width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 800, fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 },
   heartBtn: { background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '2px 4px' },
   grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 },
@@ -174,9 +174,11 @@ const styles = {
   btnBuy: {
     flex: 1, padding: '8px 0', borderRadius: 8, border: 'none',
     background: '#6366f1', color: '#fff', fontWeight: 600, fontSize: 13,
+    cursor: 'pointer', transition: 'opacity 0.15s',
   },
   btnBid: {
     flex: 1, padding: '8px 0', borderRadius: 8, border: '1px solid #334155',
     background: 'transparent', color: '#94a3b8', fontWeight: 600, fontSize: 13,
+    cursor: 'pointer', transition: 'all 0.15s',
   },
 };
