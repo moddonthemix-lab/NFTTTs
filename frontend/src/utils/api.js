@@ -37,6 +37,7 @@ export const scannerApi = {
   scanCollection: (slug) => api.get(`/scanner/collection/${slug}`).then((r) => r.data),
   search: (q, chain = 'ethereum') => api.get('/scanner/search', { params: { q, chain } }).then((r) => r.data),
   getBestOffer: (slug) => api.get(`/scanner/best-offer/${slug}`).then((r) => r.data.bestOfferEth),
+  getNFTImage: (chain, contract, tokenId) => api.get(`/scanner/nft-image/${chain}/${contract}/${tokenId}`).then((r) => r.data.imageUrl).catch(() => null),
 };
 
 export const portfolioApi = {

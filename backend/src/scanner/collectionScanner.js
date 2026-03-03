@@ -204,7 +204,7 @@ async function scanCollection(slug, chain = 'ethereum') {
       .filter((r) => r.priceEth > 0)
       .sort((a, b) => b.score - a.score);
 
-    // Fetch actual NFT image + rarity for top 20 results (deep scan — user expects ~5s wait)
+    // Fetch actual NFT image + rarity for top 20 (one API call each — images load progressively)
     const toEnrich = mapped.slice(0, 20);
     const rest = mapped.slice(20);
     const enriched = await Promise.all(

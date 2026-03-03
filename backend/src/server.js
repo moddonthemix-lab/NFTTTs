@@ -219,7 +219,18 @@ app.get('/api/scanner/collection/:slug', async (req, res) => {
   }
 });
 
-// Lightweight best-offer lookup used by the scanner for lazy-loading
+// Lightweight NFT image lookup — one call per card when a collection is expanded
+app.get('/api/scanner/nft-image/:chain/:contract/:tokenId', async (req, res) => {
+  try {
+    const { chain, contract, tokenId } = req.params;
+    const nft = await openSeaApi.getNFT(contract, tokenId, chain);
+    res.json({ imageUrl: nft?.display_image_url || nft?.image_url || null });
+  } catch {
+    res.json({ imageUrl: null });
+  }
+});
+
+// Lightweight best-offer lookup — one call per collection on first expand
 app.get('/api/scanner/best-offer/:slug', async (req, res) => {
   try {
     const offer = await openSeaApi.getCollectionBestOffer(req.params.slug);

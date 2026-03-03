@@ -112,6 +112,8 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
 
   const [expandedCollections, setExpandedCollections] = useState(new Set());
   const [bestOffers, setBestOffers] = useState({}); // { slug: ethAmount } — lazy loaded on expand
+  const [nftImages, setNftImages] = useState({});   // { `${contract}_${tokenId}`: url }
+  const fetchedNftImages = React.useRef(new Set());  // prevents duplicate fetches
 
   const toggleCollection = (slug) => {
     setExpandedCollections((prev) => {
@@ -127,6 +129,22 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
       return next;
     });
   };
+
+  // Lazy-fetch actual NFT images whenever a collection is expanded
+  React.useEffect(() => {
+    expandedCollections.forEach((slug) => {
+      const group = grouped.find((g) => g.slug === slug);
+      if (!group) return;
+      group.listings.forEach((opp) => {
+        const key = `${opp.contractAddress}_${opp.tokenId}`;
+        if (fetchedNftImages.current.has(key) || !opp.contractAddress || !opp.tokenId) return;
+        fetchedNftImages.current.add(key);
+        scannerApi.getNFTImage(opp.chain || 'ethereum', opp.contractAddress, opp.tokenId)
+          .then((url) => { if (url) setNftImages((p) => ({ ...p, [key]: url })); })
+          .catch(() => {});
+      });
+    });
+  }, [expandedCollections, grouped]);
 
   const sorted = React.useMemo(() => {
     let list = [...(opportunities || [])];
@@ -485,17 +503,25 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
               {/* Listings grid */}
               {isExpanded && (
                 <div style={styles.grid}>
-                  {group.listings.map((opp) => (
-                    <OpportunityCard
-                      key={opp.id}
-                      opp={bestOffers[group.slug] != null ? { ...opp, bestOfferEth: bestOffers[group.slug] } : opp}
-                      onBuy={handleBuy}
-                      onBid={handleBidOpen}
-                      onFavorite={handleToggleFavorite}
-                      isFavorited={isFavorited(opp.id)}
-                      ethPrice={ethPrice}
-                    />
-                  ))}
+                  {group.listings.map((opp) => {
+                    const nftKey = `${opp.contractAddress}_${opp.tokenId}`;
+                    const enriched = {
+                      ...opp,
+                      collectionImage: nftImages[nftKey] || opp.collectionImage,
+                      bestOfferEth: bestOffers[group.slug] ?? opp.bestOfferEth,
+                    };
+                    return (
+                      <OpportunityCard
+                        key={opp.id}
+                        opp={enriched}
+                        onBuy={handleBuy}
+                        onBid={handleBidOpen}
+                        onFavorite={handleToggleFavorite}
+                        isFavorited={isFavorited(opp.id)}
+                        ethPrice={ethPrice}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>
