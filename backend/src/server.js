@@ -219,6 +219,16 @@ app.get('/api/scanner/collection/:slug', async (req, res) => {
   }
 });
 
+// Lightweight best-offer lookup used by the scanner for lazy-loading
+app.get('/api/scanner/best-offer/:slug', async (req, res) => {
+  try {
+    const offer = await openSeaApi.getCollectionBestOffer(req.params.slug);
+    res.json({ bestOfferEth: offer });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/scanner/search', async (req, res) => {
   try {
     const q = (req.query.q || '').trim();

@@ -111,12 +111,19 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
   const [actionLoading, setActionLoading] = useState(null);
 
   const [expandedCollections, setExpandedCollections] = useState(new Set());
+  const [bestOffers, setBestOffers] = useState({}); // { slug: ethAmount } — lazy loaded on expand
 
   const toggleCollection = (slug) => {
     setExpandedCollections((prev) => {
       const next = new Set(prev);
-      if (next.has(slug)) next.delete(slug);
-      else next.add(slug);
+      if (next.has(slug)) { next.delete(slug); return next; }
+      next.add(slug);
+      // Lazy-fetch best offer the first time this collection is expanded
+      if (bestOffers[slug] === undefined) {
+        scannerApi.getBestOffer(slug)
+          .then((offer) => setBestOffers((p) => ({ ...p, [slug]: offer ?? null })))
+          .catch(() => setBestOffers((p) => ({ ...p, [slug]: null })));
+      }
       return next;
     });
   };
@@ -320,13 +327,17 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
               <div style={styles.grid}>
                 {scannedResult.results?.slice(0, 20).map((r, i) => {
                   const slug = scannedResult.collection?.collection || searchSlug.trim();
+                  const dsStats = scannedResult.stats;
+                  const dsOneDayInt = dsStats?.intervals?.find((iv) => iv.interval === 'one_day') || {};
+                  const dsOneHourInt = dsStats?.intervals?.find((iv) => iv.interval === 'one_hour') || {};
                   const opp = {
                     id: r.listing?.order_hash || `${slug}_${i}`,
                     collectionSlug: slug,
                     collectionName: scannedResult.collection?.name || slug,
-                    collectionImage: scannedResult.collection?.image_url || '',
+                    collectionImage: r.nftImageUrl || scannedResult.collection?.image_url || '',
                     listingPriceEth: r.priceEth,
-                    floorPriceEth: scannedResult.stats?.total?.floor_price || 0,
+                    floorPriceEth: dsStats?.total?.floor_price || 0,
+                    avgSalePriceEth: dsOneDayInt.average_price || 0,
                     score: r.score,
                     dealGrade: r.dealGrade,
                     liquidity: scannedResult.liquidity,
@@ -335,7 +346,9 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                     rarityRank: r.rarityRank,
                     rarityTotal: r.rarityTotal,
                     flipEstimate: r.flipEstimate,
-                    oneDayVolume: 0,
+                    oneDayVolume: dsOneDayInt.volume || 0,
+                    oneDayChange: dsOneDayInt.volume_change || 0,
+                    oneHourChange: dsOneHourInt.volume_change || 0,
                     listing: r.listing,
                   };
                   return (
@@ -437,6 +450,12 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                         </span>
                       )}
                     </div>
+                    {group.floorPriceEth > 0 && (
+                      <div style={styles.groupEst}>
+                        Est. {(group.floorPriceEth * group.listings.length).toFixed(3)} ETH
+                        {ethPrice ? ` (${fmtUsd(group.floorPriceEth * group.listings.length, ethPrice)})` : ''}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -469,7 +488,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                   {group.listings.map((opp) => (
                     <OpportunityCard
                       key={opp.id}
-                      opp={opp}
+                      opp={bestOffers[group.slug] != null ? { ...opp, bestOfferEth: bestOffers[group.slug] } : opp}
                       onBuy={handleBuy}
                       onBid={handleBidOpen}
                       onFavorite={handleToggleFavorite}
@@ -635,6 +654,7 @@ const styles = {
   groupImg: { width: 36, height: 36, borderRadius: 7, objectFit: 'cover', flexShrink: 0 },
   groupName: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   groupMeta: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  groupEst: { fontSize: 10, color: '#22c55e', marginTop: 1, fontFamily: 'JetBrains Mono, monospace' },
   groupBadge: { fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' },
   gradeChip: { width: 28, height: 28, borderRadius: 6, border: '1.5px solid', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 },
   chainBadge: { display: 'inline-block', marginLeft: 6, padding: '1px 6px', borderRadius: 4, background: '#1e3a5f', color: '#60a5fa', fontSize: 9, fontWeight: 700, letterSpacing: 0.5, verticalAlign: 'middle' },

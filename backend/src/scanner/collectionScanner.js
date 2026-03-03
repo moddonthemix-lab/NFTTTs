@@ -204,20 +204,29 @@ async function scanCollection(slug, chain = 'ethereum') {
       .filter((r) => r.priceEth > 0)
       .sort((a, b) => b.score - a.score);
 
-    // Fetch rarity for the top 5 scored listings only (avoid rate-limit overload)
-    const top5 = mapped.slice(0, 5);
-    const rest = mapped.slice(5);
-    const top5WithRarity = await Promise.all(
-      top5.map(async (r) => {
+    // Fetch actual NFT image + rarity for top 20 results (deep scan — user expects ~5s wait)
+    const toEnrich = mapped.slice(0, 20);
+    const rest = mapped.slice(20);
+    const enriched = await Promise.all(
+      toEnrich.map(async (r) => {
         if (!r.contractAddress || !r.tokenId) return r;
-        const rarity = await openSeaApi.getNFTRarity(r.contractAddress, r.tokenId, chain).catch(() => null);
-        if (!rarity || !rarity.maxRank) return r;
-        const isRare = rarity.rank <= Math.max(1, Math.round(rarity.maxRank * 0.10));
-        return { ...r, rarityRank: rarity.rank, rarityTotal: rarity.maxRank, isRare };
+        const nft = await openSeaApi.getNFT(r.contractAddress, r.tokenId, chain).catch(() => null);
+        if (!nft) return r;
+        const rarity = nft.rarity;
+        const isRare = rarity?.rank && rarity?.max_rank
+          ? rarity.rank <= Math.max(1, Math.round(rarity.max_rank * 0.10))
+          : false;
+        return {
+          ...r,
+          nftImageUrl: nft.display_image_url || nft.image_url || null,
+          rarityRank: rarity?.rank || null,
+          rarityTotal: rarity?.max_rank || null,
+          isRare,
+        };
       })
     );
 
-    return { collection, stats, bestOfferEth, liquidity, results: [...top5WithRarity, ...rest] };
+    return { collection, stats, bestOfferEth, liquidity, results: [...enriched, ...rest] };
   } catch (err) {
     logger.error(`scanCollection(${slug}) failed: ${err.message}`);
     return null;
