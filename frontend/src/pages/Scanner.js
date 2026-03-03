@@ -318,7 +318,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                 </div>
               </div>
               <div style={styles.grid}>
-                {scannedResult.results?.slice(0, 10).map((r, i) => {
+                {scannedResult.results?.slice(0, 20).map((r, i) => {
                   const slug = scannedResult.collection?.collection || searchSlug.trim();
                   const opp = {
                     id: r.listing?.order_hash || `${slug}_${i}`,

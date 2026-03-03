@@ -94,11 +94,11 @@ async function scanForOpportunities() {
           sevenDayInterval.average_price ||
           floorPrice;
 
-        // Watchlisted and Base collections bypass the volume filter
-        // (Base is a younger chain with inherently lower volumes)
+        // Base and watchlisted collections bypass ETH-mainnet-tuned filters.
+        // Base is a younger chain: lower volumes and much lower floor prices.
         if (!isWatchlisted && chain !== 'base' && oneDayVolume < config.scanner.minCollectionVolume) { logger.info(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
-        if (floorPrice < config.scanner.minFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} < ${config.scanner.minFloorPrice})`); continue; }
-        if (floorPrice > config.scanner.maxFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
+        if (chain !== 'base' && floorPrice < config.scanner.minFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} < ${config.scanner.minFloorPrice})`); continue; }
+        if (chain !== 'base' && floorPrice > config.scanner.maxFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
         logger.info(`${slug} [${chain}]${isWatchlisted ? ' [watchlist]' : ''}: floor=${floorPrice} ETH, vol=${oneDayVolume.toFixed(2)} ETH — scanning ${listings.length} listings`);
 
         for (const listing of listings) {
@@ -115,7 +115,8 @@ async function scanForOpportunities() {
           const score = scoreOpportunity(listing, stats);
           const flipEstimate = estimateFlip(listingPriceEth, avgSalePrice);
 
-          if (score < 10) continue;
+          // Base scores naturally lower (less volume/sales data) — use a lower threshold
+          if (score < (chain === 'base' ? 1 : 10)) continue;
 
           const tokenId = listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria
             || listing.order_hash?.slice(0, 8);
@@ -192,7 +193,7 @@ async function scanCollection(slug) {
         const flipEstimate = estimateFlip(priceEth, avgSalePrice);
         return { listing, priceEth, score, flipEstimate };
       })
-      .filter((r) => r.score > 0)
+      .filter((r) => r.priceEth > 0)  // only remove unparseable listings, show all scores
       .sort((a, b) => b.score - a.score);
 
     return { collection, stats, results };
