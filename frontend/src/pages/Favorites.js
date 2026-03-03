@@ -165,8 +165,9 @@ export default function Favorites() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {grouped.map((group) => {
           const isExpanded = expandedCollections.has(group.slug);
-          const bestScore = Math.max(...group.listings.map((l) => l.score || 0));
-          const scoreColor = bestScore >= 75 ? '#22c55e' : bestScore >= 50 ? '#eab308' : '#94a3b8';
+          const best = group.listings[0];
+          const bestGrade = best?.dealGrade || (() => { const s = best?.score ?? 0; return s >= 75 ? 'A' : s >= 55 ? 'B' : s >= 35 ? 'C' : s >= 20 ? 'D' : 'F'; })();
+          const gradeColor = { A: '#22c55e', B: '#3b82f6', C: '#eab308', D: '#f97316', F: '#ef4444' }[bestGrade] || '#94a3b8';
           return (
             <div key={group.slug} style={styles.groupWrapper}>
               <button style={styles.groupHeader} onClick={() => toggleCollection(group.slug)}>
@@ -183,9 +184,7 @@ export default function Favorites() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                  {bestScore > 0 && (
-                    <span style={{ ...styles.groupBadge, color: scoreColor }}>best {bestScore}</span>
-                  )}
+                  <div style={{ ...styles.gradeChip, color: gradeColor, borderColor: gradeColor }}>{bestGrade}</div>
                   <span style={styles.groupCount}>{group.listings.length} saved</span>
                   <span style={styles.chevron}>{isExpanded ? '▲' : '▼'}</span>
                 </div>
@@ -255,6 +254,7 @@ const styles = {
   groupName: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   groupMeta: { fontSize: 11, color: '#64748b', marginTop: 2 },
   groupBadge: { fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' },
+  gradeChip: { width: 28, height: 28, borderRadius: 6, border: '1.5px solid', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 },
   groupCount: { fontSize: 12, color: '#64748b', background: '#1e293b', borderRadius: 6, padding: '2px 8px' },
   chevron: { fontSize: 10, color: '#64748b' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, padding: '0 16px 16px' },

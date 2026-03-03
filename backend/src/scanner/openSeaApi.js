@@ -258,6 +258,46 @@ async function getBestListing(slug, tokenId) {
 }
 
 /**
+ * Best collection offer (highest floor bid — what you can sell any NFT for right now).
+ * Returns the price in ETH, or null if no offers exist.
+ */
+async function getCollectionBestOffer(slug) {
+  try {
+    const res = await rateLimitedCall(() =>
+      api.get(`/offers/collection/${slug}`, {
+        params: { limit: 1, order_by: 'eth_price', order_direction: 'desc' },
+      })
+    );
+    const offer = res.data?.offers?.[0];
+    if (!offer) return null;
+    // Collection offers pay in WETH — price lives in the offer[0].startAmount
+    const startAmount = offer.protocol_data?.parameters?.offer?.[0]?.startAmount;
+    if (!startAmount) return null;
+    const eth = parseFloat((BigInt(startAmount) * BigInt(1e6) / BigInt('1000000000000000000')).toString()) / 1e6;
+    return eth > 0 ? eth : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get rarity data for a single NFT (deep scan only — 1 extra API call per token).
+ * Returns { rank, max_rank } or null.
+ */
+async function getNFTRarity(contractAddress, tokenId, chain = 'ethereum') {
+  try {
+    const res = await rateLimitedCall(() =>
+      api.get(`/chain/${chain}/contract/${contractAddress}/nfts/${tokenId}`)
+    );
+    const rarity = res.data?.nft?.rarity;
+    if (!rarity?.rank) return null;
+    return { rank: rarity.rank, maxRank: rarity.max_rank || rarity.total_supply };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get collection info
  */
 async function getCollection(slug) {
@@ -283,4 +323,6 @@ module.exports = {
   getBestListing,
   getCollection,
   getEthPriceUsd,
+  getCollectionBestOffer,
+  getNFTRarity,
 };

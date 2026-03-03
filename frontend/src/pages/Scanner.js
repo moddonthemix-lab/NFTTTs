@@ -328,7 +328,13 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                     listingPriceEth: r.priceEth,
                     floorPriceEth: scannedResult.stats?.total?.floor_price || 0,
                     score: r.score,
+                    dealGrade: r.dealGrade,
+                    liquidity: scannedResult.liquidity,
                     flipEstimate: r.flipEstimate,
+                    bestOfferEth: scannedResult.bestOfferEth || null,
+                    isRare: r.isRare || false,
+                    rarityRank: r.rarityRank,
+                    rarityTotal: r.rarityTotal,
                     oneDayVolume: 0,
                     listing: r.listing,
                   };
@@ -403,8 +409,9 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {grouped.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((group) => {
           const isExpanded = expandedCollections.has(group.slug);
-          const bestScore = group.listings[0]?.score ?? 0;
-          const scoreColor = bestScore >= 75 ? '#22c55e' : bestScore >= 50 ? '#eab308' : '#94a3b8';
+          const bestGrade = group.listings[0]?.dealGrade || (() => { const s = group.listings[0]?.score ?? 0; return s >= 75 ? 'A' : s >= 55 ? 'B' : s >= 35 ? 'C' : s >= 20 ? 'D' : 'F'; })();
+          const gradeColor = { A: '#22c55e', B: '#3b82f6', C: '#eab308', D: '#f97316', F: '#ef4444' }[bestGrade] || '#94a3b8';
+          const dayChange = group.listings[0]?.oneDayChange || 0;
           return (
             <div key={group.slug} style={styles.groupWrapper}>
               {/* Collection header / toggle */}
@@ -423,11 +430,16 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                       Floor {group.floorPriceEth?.toFixed(4)} ETH
                       {ethPrice && group.floorPriceEth ? ` (${fmtUsd(group.floorPriceEth, ethPrice)})` : ''}
                       &nbsp;·&nbsp; Vol {(group.oneDayVolume || 0).toFixed(2)} ETH
+                      {dayChange !== 0 && (
+                        <span style={{ marginLeft: 6, color: dayChange > 0 ? '#22c55e' : '#ef4444' }}>
+                          {dayChange > 0 ? '▲' : '▼'}{Math.abs(dayChange * 100).toFixed(0)}%
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                  <span style={{ ...styles.groupBadge, color: scoreColor }}>best {bestScore}</span>
+                  <div style={{ ...styles.gradeChip, color: gradeColor, borderColor: gradeColor }}>{bestGrade}</div>
                   <span style={styles.groupCount}>{group.listings.length} listing{group.listings.length !== 1 ? 's' : ''}</span>
                   <button
                     style={styles.btnSnipe}
@@ -623,6 +635,7 @@ const styles = {
   groupName: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   groupMeta: { fontSize: 11, color: '#64748b', marginTop: 2 },
   groupBadge: { fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' },
+  gradeChip: { width: 28, height: 28, borderRadius: 6, border: '1.5px solid', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 },
   chainBadge: { display: 'inline-block', marginLeft: 6, padding: '1px 6px', borderRadius: 4, background: '#1e3a5f', color: '#60a5fa', fontSize: 9, fontWeight: 700, letterSpacing: 0.5, verticalAlign: 'middle' },
   groupCount: { fontSize: 12, color: '#64748b', background: '#1e293b', borderRadius: 6, padding: '2px 8px' },
   chevron: { fontSize: 10, color: '#64748b' },

@@ -88,6 +88,55 @@ function estimateFlip(buyPriceEth, targetSellEth, marketplaceFeePct = 2.5, royal
 }
 
 /**
+ * Convert a 0–100 score to a letter grade for non-professionals.
+ */
+function dealGrade(score) {
+  if (score >= 75) return 'A';
+  if (score >= 55) return 'B';
+  if (score >= 35) return 'C';
+  if (score >= 20) return 'D';
+  return 'F';
+}
+
+/**
+ * Liquidity score — how easy is it to sell quickly?
+ * Based on sales velocity (24h + 7d average) and volume.
+ * Returns { score: 0–100, grade: 'High'|'Med'|'Low', sales24h }
+ */
+function liquidityScore(stats) {
+  const oneDayInt = stats.intervals?.find((i) => i.interval === 'one_day') || {};
+  const sevenDayInt = stats.intervals?.find((i) => i.interval === 'seven_day') || {};
+  const sales24h = oneDayInt.sales || 0;
+  const sales7d = sevenDayInt.sales || 0;
+  const volume24h = oneDayInt.volume || 0;
+
+  let pts = 0;
+  // 24h sales count (max 50 pts — most direct signal)
+  if (sales24h >= 100) pts += 50;
+  else if (sales24h >= 30) pts += 38;
+  else if (sales24h >= 10) pts += 26;
+  else if (sales24h >= 3)  pts += 16;
+  else if (sales24h >= 1)  pts += 8;
+
+  // 7-day average consistency (max 30 pts)
+  const avg7d = sales7d / 7;
+  if (avg7d >= 20) pts += 30;
+  else if (avg7d >= 5)   pts += 20;
+  else if (avg7d >= 1)   pts += 12;
+  else if (avg7d >= 0.1) pts += 5;
+
+  // 24h volume support (max 20 pts)
+  if (volume24h >= 10)  pts += 20;
+  else if (volume24h >= 2)   pts += 13;
+  else if (volume24h >= 0.5) pts += 7;
+  else if (volume24h >= 0.1) pts += 3;
+
+  const score = Math.min(100, pts);
+  const grade = score >= 60 ? 'High' : score >= 30 ? 'Med' : 'Low';
+  return { score, grade, sales24h };
+}
+
+/**
  * Determine bid price for a collection
  */
 function calcBidPrice(floorPriceEth) {
@@ -107,4 +156,4 @@ function weiToEth(value, decimals = 18) {
   }
 }
 
-module.exports = { scoreOpportunity, estimateFlip, calcBidPrice, weiToEth };
+module.exports = { scoreOpportunity, estimateFlip, calcBidPrice, weiToEth, dealGrade, liquidityScore };

@@ -1,5 +1,5 @@
 const openSeaApi = require('./openSeaApi');
-const { scoreOpportunity, estimateFlip, weiToEth } = require('../analyzer/scorer');
+const { scoreOpportunity, estimateFlip, weiToEth, dealGrade, liquidityScore } = require('../analyzer/scorer');
 const config = require('../config');
 const logger = require('../utils/logger');
 const db = require('../utils/database');
@@ -85,6 +85,7 @@ async function scanForOpportunities() {
         if (!stats || !listings.length) continue;
 
         const floorPrice = stats.total?.floor_price || 0;
+        const oneHourInterval = stats.intervals?.find((i) => i.interval === 'one_hour') || {};
         const oneDayInterval = stats.intervals?.find((i) => i.interval === 'one_day') || {};
         const sevenDayInterval = stats.intervals?.find((i) => i.interval === 'seven_day') || {};
         const oneDayVolume = oneDayInterval.volume || 0;
@@ -93,6 +94,8 @@ async function scanForOpportunities() {
           oneDayInterval.average_price ||
           sevenDayInterval.average_price ||
           floorPrice;
+        const liquidity = liquidityScore(stats);
+        const oneHourChange = oneHourInterval.volume_change || 0;
 
         // Base and watchlisted collections bypass ETH-mainnet-tuned filters.
         // Base is a younger chain: lower volumes and much lower floor prices.
@@ -138,10 +141,13 @@ async function scanForOpportunities() {
             floorPriceEth: floorPrice,
             avgSalePriceEth: avgSalePrice,
             score,
+            dealGrade: dealGrade(score),
+            liquidity,
             flipEstimate,
             oneDayVolume,
             oneDaySales: oneDayInterval.sales || 0,
             oneDayChange: oneDayInterval.volume_change || 0,
+            oneHourChange,
             isWatchlisted,
             listing,
             scannedAt: new Date().toISOString(),
@@ -169,12 +175,13 @@ async function scanForOpportunities() {
 /**
  * Detailed scan of a single collection
  */
-async function scanCollection(slug) {
+async function scanCollection(slug, chain = 'ethereum') {
   try {
-    const [collection, stats, listings] = await Promise.all([
+    const [collection, stats, listings, bestOfferEth] = await Promise.all([
       openSeaApi.getCollection(slug),
       openSeaApi.getCollectionStats(slug),
       openSeaApi.getCheapestListings(slug, 30),
+      openSeaApi.getCollectionBestOffer(slug).catch(() => null),
     ]);
 
     if (!stats) return null;
@@ -183,7 +190,9 @@ async function scanCollection(slug) {
     const oneDayInt = stats.intervals?.find((i) => i.interval === 'one_day') || {};
     const sevenDayInt = stats.intervals?.find((i) => i.interval === 'seven_day') || {};
     const avgSalePrice = oneDayInt.average_price || sevenDayInt.average_price || floorPrice;
-    const results = listings
+    const liquidity = liquidityScore(stats);
+
+    const mapped = listings
       .map((listing) => {
         const priceEth = weiToEth(
           listing.price?.current?.value,
@@ -191,12 +200,28 @@ async function scanCollection(slug) {
         );
         const score = scoreOpportunity(listing, stats);
         const flipEstimate = estimateFlip(priceEth, avgSalePrice);
-        return { listing, priceEth, score, flipEstimate };
+        const contractAddress = listing.protocol_data?.parameters?.offer?.[0]?.token || '';
+        const tokenId = listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria || '';
+        return { listing, priceEth, score, dealGrade: dealGrade(score), flipEstimate, contractAddress, tokenId };
       })
-      .filter((r) => r.priceEth > 0)  // only remove unparseable listings, show all scores
+      .filter((r) => r.priceEth > 0)
       .sort((a, b) => b.score - a.score);
 
-    return { collection, stats, results };
+    // Fetch rarity for the top 5 scored listings only (avoid rate-limit overload)
+    const top5 = mapped.slice(0, 5);
+    const rest = mapped.slice(5);
+    const top5WithRarity = await Promise.all(
+      top5.map(async (r) => {
+        if (!r.contractAddress || !r.tokenId) return r;
+        const rarity = await openSeaApi.getNFTRarity(r.contractAddress, r.tokenId, chain).catch(() => null);
+        if (!rarity) return r;
+        const isRare = rarity.rank <= Math.max(1, Math.round((rarity.maxRank || 0) * 0.10));
+        return { ...r, rarityRank: rarity.rank, rarityTotal: rarity.maxRank, isRare };
+      })
+    );
+
+    const results = [...top5WithRarity, ...rest];
+    return { collection, stats, bestOfferEth, liquidity, results };
   } catch (err) {
     logger.error(`scanCollection(${slug}) failed: ${err.message}`);
     return null;
