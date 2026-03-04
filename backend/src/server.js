@@ -249,6 +249,31 @@ app.get('/api/scanner/best-offer/:slug', async (req, res) => {
   }
 });
 
+// Quick collection info for bid preview — name, image, floor, volume, best offer
+app.get('/api/scanner/info/:slug', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const [col, stats, bestOffer] = await Promise.all([
+      openSeaApi.getCollection(slug),
+      openSeaApi.getCollectionStats(slug),
+      openSeaApi.getCollectionBestOffer(slug),
+    ]);
+    if (!col) return res.status(404).json({ error: 'Collection not found' });
+    res.json({
+      name: col.name || slug,
+      imageUrl: col.image_url || null,
+      description: col.description || null,
+      floorPriceEth: stats?.total?.floor_price || null,
+      volume24hEth: stats?.intervals?.find((i) => i.interval === 'one_day')?.volume || null,
+      numOwners: stats?.total?.num_owners || null,
+      totalSupply: stats?.total?.count || null,
+      bestOfferEth: bestOffer,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/scanner/search', async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
