@@ -375,11 +375,13 @@ app.post('/api/trade/snipe/:slug', async (req, res) => {
     if (!listings.length) return res.status(404).json({ error: 'No listings found for this collection' });
     const listing = listings[0];
     const priceEth = weiToEth(listing.price?.current?.value, listing.price?.current?.decimals);
+    logger.info(`Snipe: ${slug} @ ${priceEth} ETH, order=${listing.order_hash}, chain=${listing.chain}`);
     const result = await buyNFT(listing);
     db.addTrade({ type: 'buy', collectionSlug: slug, priceEth, txHash: result.txHash, source: 'snipe' });
     io.emit('trade:buy', { ...result, collectionSlug: slug, priceEth, source: 'snipe' });
     res.json({ success: true, ...result, priceEth, listing });
   } catch (err) {
+    logger.error(`Snipe failed [${slug}]: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });

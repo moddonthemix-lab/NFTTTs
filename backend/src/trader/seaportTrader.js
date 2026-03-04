@@ -174,6 +174,8 @@ async function buyNFT(listing) {
     throw new Error(`OpenSea did not return fulfillment tx. Response: ${JSON.stringify(res.data)}`);
   }
 
+  logger.info(`Fulfillment tx: to=${txParams.to}, value=${txParams.value}, gas=${txParams.gas}`);
+
   const tx = await wallet.sendTransaction({
     to: txParams.to,
     data: txParams.input_data,
