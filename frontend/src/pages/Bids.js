@@ -7,6 +7,7 @@ export default function Bids({ bids, setBids }) {
   const [slug, setSlug] = useState('');
   const [amount, setAmount] = useState('');
   const [hours, setHours] = useState(24);
+  const [chain, setChain] = useState('ethereum');
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState({});
 
@@ -14,10 +15,10 @@ export default function Bids({ bids, setBids }) {
     if (!slug || !amount) return alert('Fill in all fields');
     setLoading(true);
     try {
-      const result = await bidsApi.place(slug.trim(), parseFloat(amount), parseInt(hours));
+      const result = await bidsApi.place(slug.trim(), parseFloat(amount), parseInt(hours), chain);
       alert(`Bid placed! Order: ${result.orderHash || 'submitted'}`);
       setShowForm(false);
-      setSlug(''); setAmount('');
+      setSlug(''); setAmount(''); setChain('ethereum');
     } catch (err) {
       alert(`Bid failed: ${err.response?.data?.error || err.message}`);
     }
@@ -28,7 +29,7 @@ export default function Bids({ bids, setBids }) {
     if (!bid.orderHash) return alert('No order hash to cancel');
     setCancelling((p) => ({ ...p, [bid.orderHash]: true }));
     try {
-      await bidsApi.cancel(bid.orderHash);
+      await bidsApi.cancel(bid.orderHash, bid.chain || 'ethereum');
       setBids?.((prev) => prev.filter((b) => b.orderHash !== bid.orderHash));
       alert('Bid cancelled');
     } catch (err) {
@@ -56,6 +57,19 @@ export default function Bids({ bids, setBids }) {
           <input style={styles.input} placeholder="e.g. boredapeyachtclub" value={slug} onChange={(e) => setSlug(e.target.value)} />
           <label style={styles.label}>Offer Amount (ETH / WETH)</label>
           <input style={styles.input} type="number" step="0.001" placeholder="0.05" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <label style={styles.label}>Chain</label>
+          <div style={styles.chainRow}>
+            {['ethereum', 'base'].map((c) => (
+              <button
+                key={c}
+                style={{ ...styles.chainBtn, ...(chain === c ? styles.chainBtnActive : {}) }}
+                onClick={() => setChain(c)}
+                type="button"
+              >
+                {c === 'ethereum' ? '⬡ Ethereum' : '🔵 Base'}
+              </button>
+            ))}
+          </div>
           <label style={styles.label}>Expires In (hours)</label>
           <input style={styles.input} type="number" value={hours} onChange={(e) => setHours(e.target.value)} />
           <div style={styles.note}>
@@ -74,7 +88,14 @@ export default function Bids({ bids, setBids }) {
           {bids.map((bid, i) => (
             <div key={i} style={styles.card}>
               <div style={styles.cardLeft}>
-                <div style={styles.bidSlug}>{bid.collectionSlug}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={styles.bidSlug}>{bid.collectionSlug}</span>
+                  {bid.chain && (
+                    <span style={{ ...styles.chainBadge, ...(bid.chain === 'base' ? styles.chainBadgeBase : {}) }}>
+                      {bid.chain}
+                    </span>
+                  )}
+                </div>
                 <div style={styles.bidMeta}>
                   <span className="mono" style={{ color: '#eab308' }}>{bid.offerAmountEth} ETH</span>
                   {bid.placedAt && (
@@ -124,4 +145,9 @@ const styles = {
   bidMeta: { display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' },
   hash: { fontSize: 11, color: '#334155' },
   btnCancel: { padding: '7px 16px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#ef4444', fontWeight: 600, fontSize: 13 },
+  chainRow: { display: 'flex', gap: 8 },
+  chainBtn: { flex: 1, padding: '9px 0', borderRadius: 9, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontWeight: 600, fontSize: 13, cursor: 'pointer' },
+  chainBtnActive: { border: '1px solid #eab308', color: '#eab308', background: '#1e293b' },
+  chainBadge: { fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 5, background: '#1e3a5f', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: 0.5 },
+  chainBadgeBase: { background: '#1a2a4a', color: '#3b82f6' },
 };

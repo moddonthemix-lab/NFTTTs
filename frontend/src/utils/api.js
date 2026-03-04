@@ -61,9 +61,9 @@ export const favoritesApi = {
 
 export const bidsApi = {
   get: () => api.get('/bids').then((r) => r.data),
-  place: (collectionSlug, offerAmountEth, expirationHours = 24) =>
-    api.post('/bids/place', { collectionSlug, offerAmountEth, expirationHours }).then((r) => r.data),
-  cancel: (orderHash) => api.delete(`/bids/${orderHash}`).then((r) => r.data),
+  place: (collectionSlug, offerAmountEth, expirationHours = 24, chain = 'ethereum') =>
+    api.post('/bids/place', { collectionSlug, offerAmountEth, expirationHours, chain }).then((r) => r.data),
+  cancel: (orderHash, chain = 'ethereum') => api.delete(`/bids/${orderHash}?chain=${chain}`).then((r) => r.data),
 };
 
 export const approvalsApi = {
