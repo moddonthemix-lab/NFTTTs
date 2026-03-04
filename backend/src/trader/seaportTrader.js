@@ -261,19 +261,25 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, ch
     rawFees = feeRes.data?.fees ?? [];
   } catch (e) {
     logger.warn(`Could not fetch collection fees, using OS default: ${e.message}`);
-    rawFees = [{ fee: 100, recipient: OS_FEE_RECIPIENT, required: true }];
+    rawFees = [{ fee: 1, recipient: OS_FEE_RECIPIENT, required: true }];  // 1% fallback
   }
 
   const feeItems = rawFees
     .filter(f => f.required)
-    .map(f => ({
-      itemType:             1,
-      token:                wethAddress,
-      identifierOrCriteria: '0',
-      startAmount:          (offerAmountWei * BigInt(f.fee) / 10000n).toString(),
-      endAmount:            (offerAmountWei * BigInt(f.fee) / 10000n).toString(),
-      recipient:            f.recipient,
-    }));
+    .map(f => {
+      // OpenSea's fee field is a PERCENTAGE (e.g. 1 = 1%, 2.5 = 2.5%), not basis points.
+      // Convert: multiply by 100 to get bps, then divide by 10000.
+      const bps    = Math.round(f.fee * 100);
+      const feeAmt = (offerAmountWei * BigInt(bps) / 10000n).toString();
+      return {
+        itemType:             1,
+        token:                wethAddress,
+        identifierOrCriteria: '0',
+        startAmount:          feeAmt,
+        endAmount:            feeAmt,
+        recipient:            f.recipient,
+      };
+    });
 
   logger.info(`Fees: ${feeItems.map(f => `${f.recipient.slice(0,8)}… ${(Number(f.startAmount)/1e18).toFixed(6)} WETH`).join(', ')}`);
 
