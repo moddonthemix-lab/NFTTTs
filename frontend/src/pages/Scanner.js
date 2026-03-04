@@ -130,22 +130,6 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
     });
   };
 
-  // Lazy-fetch actual NFT images whenever a collection is expanded
-  React.useEffect(() => {
-    expandedCollections.forEach((slug) => {
-      const group = grouped.find((g) => g.slug === slug);
-      if (!group) return;
-      group.listings.forEach((opp) => {
-        const key = `${opp.contractAddress}_${opp.tokenId}`;
-        if (fetchedNftImages.current.has(key) || !opp.contractAddress || !opp.tokenId) return;
-        fetchedNftImages.current.add(key);
-        scannerApi.getNFTImage(opp.chain || 'ethereum', opp.contractAddress, opp.tokenId)
-          .then((url) => { if (url) setNftImages((p) => ({ ...p, [key]: url })); })
-          .catch(() => {});
-      });
-    });
-  }, [expandedCollections, grouped]);
-
   const sorted = React.useMemo(() => {
     let list = [...(opportunities || [])];
     // Chain filter
@@ -183,6 +167,22 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
     }
     return Array.from(map.values());
   }, [sorted]);
+
+  // Lazy-fetch actual NFT images when a collection is expanded — must be after `grouped` is defined
+  React.useEffect(() => {
+    expandedCollections.forEach((slug) => {
+      const group = grouped.find((g) => g.slug === slug);
+      if (!group) return;
+      group.listings.forEach((opp) => {
+        const key = `${opp.contractAddress}_${opp.tokenId}`;
+        if (fetchedNftImages.current.has(key) || !opp.contractAddress || !opp.tokenId) return;
+        fetchedNftImages.current.add(key);
+        scannerApi.getNFTImage(opp.chain || 'ethereum', opp.contractAddress, opp.tokenId)
+          .then((url) => { if (url) setNftImages((p) => ({ ...p, [key]: url })); })
+          .catch(() => {});
+      });
+    });
+  }, [expandedCollections, grouped]);
 
   const handleScanNow = () => botApi.scan().catch((e) => alert(e.message));
 
