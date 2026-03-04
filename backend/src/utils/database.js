@@ -118,7 +118,7 @@ function addWhale(address, whale) {
   if (!address) return;
   const db = readDb();
   const bucket = walletBucket(db, address);
-  if (bucket.whales.length >= 10) throw new Error('Max 10 whale wallets');
+  if (bucket.whales.length >= 5) throw new Error('Max 5 whale wallets');
   if (!bucket.whales.find((w) => w.address.toLowerCase() === whale.address.toLowerCase())) {
     bucket.whales.push({ ...whale, addedAt: new Date().toISOString() });
   }

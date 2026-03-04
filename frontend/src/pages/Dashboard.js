@@ -10,7 +10,7 @@ const fmtUsd = (eth, price) => {
   return usd >= 1000 ? `≈ $${Math.round(usd).toLocaleString()}` : `≈ $${usd.toFixed(2)}`;
 };
 
-export default function Dashboard({ walletInfo, botRunning, stats, trades, portfolio, pendingApprovals, scanning, ethPrice }) {
+export default function Dashboard({ walletInfo, botRunning, stats, trades, portfolio, bids, pendingApprovals, scanning, ethPrice }) {
   const [starting, setStarting] = React.useState(false);
   const [diag, setDiag] = React.useState(null);
   const [diagLoading, setDiagLoading] = React.useState(false);
@@ -145,7 +145,7 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
           color={(stats?.totalProfit || 0) >= 0 ? '#22c55e' : '#ef4444'}
         />
         <StatCard icon="◉" label="Portfolio" value={portfolio?.length || 0} sub={`of ${10} max`} />
-        <StatCard icon="⊖" label="Active Bids" value={stats?.totalBids || 0} />
+        <StatCard icon="⊖" label="Active Bids" value={bids?.length || 0} />
         <StatCard icon="◉" label="Pending" value={pendingApprovals?.length || 0} color="#eab308" sub="need approval" />
       </div>
 

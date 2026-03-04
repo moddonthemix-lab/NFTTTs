@@ -60,6 +60,7 @@ function AppInner() {
                   stats={stats}
                   trades={trades}
                   portfolio={portfolio}
+                  bids={bids}
                   pendingApprovals={pendingApprovals}
                   scanning={scanning}
                   ethPrice={ethPrice}

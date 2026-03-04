@@ -529,55 +529,50 @@ app.get('/api/whales/:address/nfts', async (req, res) => {
   try {
     const { address } = req.params;
 
-    // Paginate up to 400 NFTs (8 pages × 50)
-    let allNfts = [];
+    // Paginate fully until no more cursor (safety cap: 40 pages = 2000 NFTs)
+    const colMap = new Map();
+    let totalNfts = 0;
     let nextCursor = null;
-    for (let i = 0; i < 8; i++) {
+    let truncated = false;
+    for (let page = 0; page < 40; page++) {
       const { nfts, next } = await openSeaApi.getNFTsByOwner(address, 50, nextCursor);
-      allNfts = allNfts.concat(nfts);
+      totalNfts += nfts.length;
+      for (const nft of nfts) {
+        const slug = nft.collection || 'unknown';
+        if (!colMap.has(slug)) colMap.set(slug, { slug, name: slug, image: null, count: 0, floorPriceEth: null });
+        colMap.get(slug).count++;
+      }
       nextCursor = next;
       if (!next) break;
+      if (page === 39) { truncated = true; }
     }
 
-    // Group by collection slug, use first NFT image as collection thumbnail
-    const colMap = new Map();
-    for (const nft of allNfts) {
-      const slug = nft.collection || 'unknown';
-      if (!colMap.has(slug)) {
-        colMap.set(slug, { slug, name: nft.collection || slug, image: nft.image_url || null, nfts: [], floorPriceEth: null });
-      }
-      colMap.get(slug).nfts.push({
-        tokenId: nft.identifier,
-        name: nft.name || `#${nft.identifier}`,
-        image: nft.image_url || null,
-        contract: nft.contract,
-        openseaUrl: nft.opensea_url || null,
-      });
-    }
+    // Sort collections by count descending
+    const collections = Array.from(colMap.values()).sort((a, b) => b.count - a.count);
 
-    // Enrich top 20 collections by count with name, image, floor price
-    const collections = Array.from(colMap.values())
-      .sort((a, b) => b.nfts.length - a.nfts.length);
-
-    for (const col of collections.slice(0, 20)) {
-      const [info, stats] = await Promise.allSettled([
-        openSeaApi.getCollection(col.slug),
-        openSeaApi.getCollectionStats(col.slug),
-      ]);
-      if (info.status === 'fulfilled' && info.value) {
-        col.name = info.value.name || col.slug;
-        if (info.value.image_url) col.image = info.value.image_url;
+    // Enrich ALL collections with name + image; get floor price for top 50
+    for (let i = 0; i < collections.length; i++) {
+      const col = collections[i];
+      const wantFloor = i < 50;
+      const tasks = [openSeaApi.getCollection(col.slug)];
+      if (wantFloor) tasks.push(openSeaApi.getCollectionStats(col.slug));
+      const results = await Promise.allSettled(tasks);
+      if (results[0].status === 'fulfilled' && results[0].value) {
+        col.name = results[0].value.name || col.slug;
+        if (results[0].value.image_url) col.image = results[0].value.image_url;
       }
-      if (stats.status === 'fulfilled' && stats.value) {
-        col.floorPriceEth = stats.value.total?.floor_price || null;
+      if (wantFloor && results[1]?.status === 'fulfilled' && results[1].value) {
+        col.floorPriceEth = results[1].value.total?.floor_price || null;
       }
+      // Add nfts array expected by frontend (count only, no individual data)
+      col.nfts = new Array(col.count);
     }
 
     const netValueEth = collections.reduce((sum, c) => {
-      return sum + (c.floorPriceEth ? c.nfts.length * c.floorPriceEth : 0);
+      return sum + (c.floorPriceEth ? c.count * c.floorPriceEth : 0);
     }, 0);
 
-    res.json({ address, totalNfts: allNfts.length, netValueEth, collections });
+    res.json({ address, totalNfts, truncated, netValueEth, collections });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

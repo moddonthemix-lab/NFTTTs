@@ -68,12 +68,12 @@ export default function WhaleTracker({ ethPrice }) {
       <div style={styles.header}>
         <div>
           <h1 style={styles.h1}>Whale Tracker</h1>
-          <p style={styles.sub}>Track up to 10 wallets — see what they hold</p>
+          <p style={styles.sub}>Track up to 5 wallets — see what they hold</p>
         </div>
-        <span style={styles.count}>{whales.length} / 10 wallets</span>
+        <span style={styles.count}>{whales.length} / 5 wallets</span>
       </div>
 
-      {whales.length < 10 && (
+      {whales.length < 5 && (
         <div style={styles.addBox}>
           <input
             style={{ ...styles.input, flex: 2 }}
@@ -163,8 +163,8 @@ export default function WhaleTracker({ ethPrice }) {
                             <span style={styles.summaryUsd}>{fmtUsd(data.netValueEth, ethPrice)}</span>
                           )}
                         </div>
-                        {data.totalNfts >= 400 && (
-                          <div style={styles.truncNote}>Showing first 400 NFTs</div>
+                        {data.truncated && (
+                          <div style={styles.truncNote}>2000+ NFTs — showing first 2000</div>
                         )}
                       </div>
 
@@ -183,7 +183,8 @@ export default function WhaleTracker({ ethPrice }) {
                           </div>
                         )}
                         {data.collections?.map((col) => {
-                          const estVal = col.floorPriceEth ? col.nfts.length * col.floorPriceEth : null;
+                          const count = col.count ?? col.nfts?.length ?? 0;
+                          const estVal = col.floorPriceEth ? count * col.floorPriceEth : null;
                           return (
                             <a
                               key={col.slug}
@@ -200,7 +201,7 @@ export default function WhaleTracker({ ethPrice }) {
                                 <span style={styles.colName}>{col.name || col.slug}</span>
                               </div>
                               <span style={styles.colCell}>
-                                <span style={styles.colCountBadge}>{col.nfts.length}</span>
+                                <span style={styles.colCountBadge}>{count}</span>
                               </span>
                               <span style={styles.colCell}>
                                 {col.floorPriceEth
