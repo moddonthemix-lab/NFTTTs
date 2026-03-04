@@ -279,12 +279,12 @@ app.get('/api/bids', (req, res) => {
 
 app.post('/api/bids/place', async (req, res) => {
   try {
-    const { collectionSlug, offerAmountEth, expirationHours } = req.body;
+    const { collectionSlug, offerAmountEth, expirationHours, chain = 'ethereum' } = req.body;
     if (!collectionSlug || !offerAmountEth) {
       return res.status(400).json({ error: 'collectionSlug and offerAmountEth are required' });
     }
-    const result = await placeBid(collectionSlug, offerAmountEth, expirationHours);
-    db.addBid({ collectionSlug, offerAmountEth, orderHash: result.orderHash });
+    const result = await placeBid(collectionSlug, offerAmountEth, expirationHours, chain);
+    db.addBid({ collectionSlug, offerAmountEth, orderHash: result.orderHash, chain });
     io.emit('trade:bid', result);
     res.json({ success: true, ...result });
   } catch (err) {
@@ -294,7 +294,8 @@ app.post('/api/bids/place', async (req, res) => {
 
 app.delete('/api/bids/:orderHash', async (req, res) => {
   try {
-    await cancelOrder(req.params.orderHash);
+    const chain = req.query.chain || 'ethereum';
+    await cancelOrder(req.params.orderHash, chain);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -403,11 +404,11 @@ app.post('/api/trade/buy', async (req, res) => {
 
 app.post('/api/trade/sell', async (req, res) => {
   try {
-    const { contractAddress, tokenId, priceEth } = req.body;
+    const { contractAddress, tokenId, priceEth, chain = 'ethereum' } = req.body;
     if (!contractAddress || !tokenId || !priceEth) {
       return res.status(400).json({ error: 'contractAddress, tokenId, priceEth required' });
     }
-    const result = await sellNFT(contractAddress, tokenId, priceEth);
+    const result = await sellNFT(contractAddress, tokenId, priceEth, 72, chain);
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });

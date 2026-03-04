@@ -15,6 +15,26 @@ api.interceptors.request.use((reqConfig) => {
   return reqConfig;
 });
 
+// 429 retry with exponential backoff (up to 4 retries: 1s, 4s, 9s, 16s)
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const status = error.response?.status;
+    const cfg = error.config;
+    if (status === 429) {
+      cfg._retryCount = (cfg._retryCount || 0) + 1;
+      if (cfg._retryCount <= 4) {
+        const retryAfterMs = parseInt(error.response.headers?.['retry-after'] || '0') * 1000;
+        const backoffMs = retryAfterMs || Math.min(cfg._retryCount * cfg._retryCount * 1000, 16000);
+        logger.warn(`OpenSea 429 rate limit — retry ${cfg._retryCount}/4 in ${Math.round(backoffMs / 1000)}s`);
+        await new Promise((r) => setTimeout(r, backoffMs));
+        return api(cfg);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Startup diagnostic — shows in Railway logs
 const _keyPreview = (process.env.OPENSEA_API_KEY || '').slice(0, 6);
 logger.info(`OpenSea API key: ${_keyPreview ? `${_keyPreview}… (loaded)` : 'NOT SET — add OPENSEA_API_KEY in Railway Variables'}`);
@@ -312,6 +332,33 @@ async function getCollection(slug) {
   });
 }
 
+/**
+ * Get real marketplace fee + creator royalty for a collection.
+ * Cached per slug for 1 hour — fees rarely change.
+ * Returns { marketplaceFee, royaltyFee } as percentages (e.g. 2.5, 5.0).
+ * Falls back to null on error (caller should use defaults).
+ */
+const _feesCache = new Map();
+const FEES_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+async function getCollectionFees(slug) {
+  const cached = _feesCache.get(slug);
+  if (cached && Date.now() - cached.fetchedAt < FEES_CACHE_TTL) return cached.fees;
+
+  try {
+    const col = await getCollection(slug);
+    const rawFees = col?.fees || [];
+    // OpenSea marks its own platform fee as required=true; creator royalties are required=false
+    const marketplaceFee = rawFees.filter((f) => f.required).reduce((sum, f) => sum + f.fee * 100, 0) || 2.5;
+    const royaltyFee = rawFees.filter((f) => !f.required).reduce((sum, f) => sum + f.fee * 100, 0);
+    const fees = { marketplaceFee, royaltyFee };
+    _feesCache.set(slug, { fees, fetchedAt: Date.now() });
+    return fees;
+  } catch {
+    return null;
+  }
+}
+
 module.exports = {
   getTrendingCollections,
   searchCollections,
@@ -324,5 +371,6 @@ module.exports = {
   getCollection,
   getCollectionBestOffer,
   getNFTRarity,
+  getCollectionFees,
   getEthPriceUsd,
 };

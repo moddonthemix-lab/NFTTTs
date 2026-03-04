@@ -77,9 +77,10 @@ async function scanForOpportunities() {
 
     for (const { slug, col, isWatchlisted, chain } of trendingSlugs) {
       try {
-        const [stats, listings] = await Promise.all([
+        const [stats, listings, fees] = await Promise.all([
           openSeaApi.getCollectionStats(slug),
           openSeaApi.getCheapestListings(slug, 10),
+          openSeaApi.getCollectionFees(slug),
         ]);
 
         if (!stats || !listings.length) continue;
@@ -118,7 +119,9 @@ async function scanForOpportunities() {
           }
 
           const score = scoreOpportunity(listing, stats);
-          const flipEstimate = estimateFlip(listingPriceEth, avgSalePrice);
+          const marketplaceFee = fees?.marketplaceFee ?? 2.5;
+          const royaltyFee = fees?.royaltyFee ?? 5.0;
+          const flipEstimate = estimateFlip(listingPriceEth, avgSalePrice, marketplaceFee, royaltyFee);
 
           if (score < (chain === 'base' ? 1 : 10)) continue;
 
@@ -187,11 +190,12 @@ async function scanForOpportunities() {
  */
 async function scanCollection(slug, chain = 'ethereum') {
   try {
-    const [collection, stats, listings, bestOfferEth] = await Promise.all([
+    const [collection, stats, listings, bestOfferEth, fees] = await Promise.all([
       openSeaApi.getCollection(slug),
       openSeaApi.getCollectionStats(slug),
       openSeaApi.getCheapestListings(slug, 30),
       openSeaApi.getCollectionBestOffer(slug).catch(() => null),
+      openSeaApi.getCollectionFees(slug),
     ]);
 
     if (!stats) return null;
@@ -206,7 +210,9 @@ async function scanCollection(slug, chain = 'ethereum') {
       .map((listing) => {
         const priceEth = weiToEth(listing.price?.current?.value, listing.price?.current?.decimals);
         const score = scoreOpportunity(listing, stats);
-        const flipEstimate = estimateFlip(priceEth, avgSalePrice);
+        const mFee = fees?.marketplaceFee ?? 2.5;
+        const rFee = fees?.royaltyFee ?? 5.0;
+        const flipEstimate = estimateFlip(priceEth, avgSalePrice, mFee, rFee);
         const contractAddress = listing.protocol_data?.parameters?.offer?.[0]?.token || '';
         const tokenId = listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria || '';
         return { listing, priceEth, score, dealGrade: dealGrade(score), flipEstimate, contractAddress, tokenId };

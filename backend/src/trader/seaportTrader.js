@@ -4,21 +4,33 @@ const walletUtils = require('../utils/wallet');
 const config = require('../config');
 const logger = require('../utils/logger');
 
-// Seaport v1.6 contract address (mainnet)
-const SEAPORT_ADDRESS = '0x0000000000000068F116a894984e2DB1123eB395';
-
-// WETH on mainnet
-const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
-
 const TX_CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
 
-// Seaport v1.6 EIP-712 domain — fixed, never changes
-const SEAPORT_DOMAIN = {
-  name: 'Seaport',
-  version: '1.6',
-  chainId: 1,
-  verifyingContract: SEAPORT_ADDRESS,
+// Seaport v1.6 is deployed at the same address on all supported chains (CREATE2)
+const SEAPORT_ADDRESS = '0x0000000000000068F116a894984e2DB1123eB395';
+
+// Per-chain config
+const CHAIN_CONFIG = {
+  ethereum: {
+    chainId: 1,
+    seaportAddress: SEAPORT_ADDRESS,
+    wethAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+  },
+  base: {
+    chainId: 8453,
+    seaportAddress: SEAPORT_ADDRESS,
+    wethAddress: '0x4200000000000000000000000000000000000006',
+  },
 };
+
+function chainCfg(chain) {
+  return CHAIN_CONFIG[chain] || CHAIN_CONFIG.ethereum;
+}
+
+function seaportDomain(chain) {
+  const cfg = chainCfg(chain);
+  return { name: 'Seaport', version: '1.6', chainId: cfg.chainId, verifyingContract: cfg.seaportAddress };
+}
 
 // Seaport v1.6 EIP-712 types — fixed for all orders (NOT returned by the OpenSea API)
 const SEAPORT_ORDER_TYPES = {
@@ -75,12 +87,13 @@ async function waitForConfirmation(tx) {
   return receipt;
 }
 
-async function ensureWETH(wallet, amountWei) {
-  const weth = new ethers.Contract(WETH_ADDRESS, WETH_ABI, wallet);
+async function ensureWETH(wallet, amountWei, chain = 'ethereum') {
+  const { wethAddress, seaportAddress } = chainCfg(chain);
+  const weth = new ethers.Contract(wethAddress, WETH_ABI, wallet);
   const balance = await weth.balanceOf(wallet.address);
   if (balance < amountWei) {
     const needed = amountWei - balance;
-    logger.info(`Wrapping ${ethers.formatEther(needed)} ETH -> WETH`);
+    logger.info(`[${chain}] Wrapping ${ethers.formatEther(needed)} ETH -> WETH`);
     const tx = await weth.deposit({ value: needed });
     await waitForConfirmation(tx);
     logger.info('WETH wrap confirmed');
@@ -89,12 +102,13 @@ async function ensureWETH(wallet, amountWei) {
   }
 }
 
-async function approveWETH(wallet, amountWei) {
-  const weth = new ethers.Contract(WETH_ADDRESS, WETH_ABI, wallet);
-  const allowance = await weth.allowance(wallet.address, SEAPORT_ADDRESS);
+async function approveWETH(wallet, amountWei, chain = 'ethereum') {
+  const { wethAddress, seaportAddress } = chainCfg(chain);
+  const weth = new ethers.Contract(wethAddress, WETH_ABI, wallet);
+  const allowance = await weth.allowance(wallet.address, seaportAddress);
   if (allowance < amountWei) {
-    logger.info('Approving Seaport to spend WETH (one-time gas cost)...');
-    const tx = await weth.approve(SEAPORT_ADDRESS, ethers.MaxUint256);
+    logger.info(`[${chain}] Approving Seaport to spend WETH (one-time gas cost)...`);
+    const tx = await weth.approve(seaportAddress, ethers.MaxUint256);
     await waitForConfirmation(tx);
     logger.info('Seaport WETH approval confirmed');
   } else {
@@ -105,18 +119,19 @@ async function approveWETH(wallet, amountWei) {
 // ─── Buy ─────────────────────────────────────────────────────────────────────
 
 async function buyNFT(listing) {
-  const wallet = walletUtils.getWallet();
+  const chain = listing.chain || 'ethereum';
+  const wallet = walletUtils.getWalletForChain(chain);
   if (!wallet) throw new Error('No wallet connected. Import a wallet first.');
 
-  logger.info(`Buying NFT: order ${listing.order_hash}`);
+  logger.info(`[${chain}] Buying NFT: order ${listing.order_hash}`);
 
   const res = await axios.post(
     `${config.opensea.apiBase}/listings/fulfillment_data`,
     {
       listing: {
         hash: listing.order_hash,
-        chain: listing.chain || 'ethereum',
-        protocol_address: SEAPORT_ADDRESS,
+        chain,
+        protocol_address: chainCfg(chain).seaportAddress,
       },
       fulfiller: { address: wallet.address },
     },
@@ -158,29 +173,30 @@ async function buyNFT(listing) {
  * but does NOT include EIP-712 types or a `value` field — those are hardcoded
  * above as SEAPORT_ORDER_TYPES.
  */
-async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24) {
-  const wallet = walletUtils.getWallet();
+async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, chain = 'ethereum') {
+  const wallet = walletUtils.getWalletForChain(chain);
   if (!wallet) throw new Error('No wallet connected.');
 
-  logger.info(`Placing bid: ${collectionSlug} @ ${offerAmountEth} ETH (${expirationHours}h)`);
+  const { wethAddress, seaportAddress } = chainCfg(chain);
+  logger.info(`[${chain}] Placing bid: ${collectionSlug} @ ${offerAmountEth} ETH (${expirationHours}h)`);
 
   const offerAmountWei = ethers.parseEther(offerAmountEth.toString());
 
-  await ensureWETH(wallet, offerAmountWei);
-  await approveWETH(wallet, offerAmountWei);
+  await ensureWETH(wallet, offerAmountWei, chain);
+  await approveWETH(wallet, offerAmountWei, chain);
 
   const expiration = Math.floor(Date.now() / 1000) + expirationHours * 3600;
 
   const buildPayload = {
     criteria: { collection: { slug: collectionSlug } },
-    protocol_address: SEAPORT_ADDRESS,
+    protocol_address: seaportAddress,
     quantity: 1,
     offer_protected: false,
     offerer: wallet.address,
     consideration: [
       {
         item_type: 1,                         // ERC20 = WETH
-        token: WETH_ADDRESS,
+        token: wethAddress,
         identifier_or_criteria: '0',
         start_amount: offerAmountWei.toString(),
         end_amount: offerAmountWei.toString(),
@@ -204,7 +220,7 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24) {
   logger.info('Got order parameters, signing...');
 
   const signature = await wallet.signTypedData(
-    SEAPORT_DOMAIN,
+    seaportDomain(chain),
     SEAPORT_ORDER_TYPES,
     partialOrder.parameters
   );
@@ -215,7 +231,7 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24) {
     `${config.opensea.apiBase}/offers`,
     {
       criteria: { collection: { slug: collectionSlug } },
-      protocol_address: SEAPORT_ADDRESS,
+      protocol_address: seaportAddress,
       protocol_data: {
         parameters: partialOrder.parameters,
         signature,
@@ -227,16 +243,17 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24) {
   const orderHash = submitRes.data?.order_hash || submitRes.data?.order?.order_hash;
   logger.info(`Bid live on ${collectionSlug}: order ${orderHash}`);
 
-  return { orderHash, collectionSlug, offerAmountEth, expirationHours };
+  return { orderHash, collectionSlug, offerAmountEth, expirationHours, chain };
 }
 
 // ─── Sell (create listing) ────────────────────────────────────────────────────
 
-async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72) {
-  const wallet = walletUtils.getWallet();
+async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72, chain = 'ethereum') {
+  const wallet = walletUtils.getWalletForChain(chain);
   if (!wallet) throw new Error('No wallet connected.');
 
-  logger.info(`Listing ${contractAddress}/${tokenId} for ${priceEth} ETH`);
+  const { seaportAddress } = chainCfg(chain);
+  logger.info(`[${chain}] Listing ${contractAddress}/${tokenId} for ${priceEth} ETH`);
 
   const priceWei = ethers.parseEther(priceEth.toString());
   const now = Math.floor(Date.now() / 1000);
@@ -272,7 +289,7 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72)
       conduitKey: ethers.ZeroHash,
       totalOriginalConsiderationItems: '1',
     },
-    protocol_address: SEAPORT_ADDRESS,
+    protocol_address: seaportAddress,
   };
 
   const buildRes = await axios.post(
@@ -285,7 +302,7 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72)
   const orderData = buildRes.data;
 
   // OpenSea may return ready-made EIP-712 fields or just parameters — handle both
-  const domain      = orderData.domain   || SEAPORT_DOMAIN;
+  const domain      = orderData.domain   || seaportDomain(chain);
   const orderParams = orderData.value    || orderData.parameters || orderData;
   const rawTypes    = orderData.types    || SEAPORT_ORDER_TYPES;
   // ethers v6 handles domain separately — strip EIP712Domain if present in types
@@ -297,7 +314,7 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72)
     `${config.opensea.apiBase}/listings`,
     {
       parameters: orderData.parameters || orderParams,
-      protocol_address: SEAPORT_ADDRESS,
+      protocol_address: seaportAddress,
       signature,
     },
     { headers: osHeaders() }
@@ -311,12 +328,12 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72)
 
 // ─── Cancel ───────────────────────────────────────────────────────────────────
 
-async function cancelOrder(orderHash) {
-  const wallet = walletUtils.getWallet();
+async function cancelOrder(orderHash, chain = 'ethereum') {
+  const wallet = walletUtils.getWalletForChain(chain);
   if (!wallet) throw new Error('No wallet connected.');
 
   const res = await axios.post(
-    `${config.opensea.apiBase}/orders/chain/ethereum/seaport/${orderHash}/cancel`,
+    `${config.opensea.apiBase}/orders/chain/${chain}/seaport/${orderHash}/cancel`,
     {},
     { headers: osHeaders() }
   );
@@ -337,6 +354,10 @@ async function getDiagnostics() {
     ethBalanceEth: null,
     wethBalanceEth: null,
     seaportAllowance: null,   // 'unlimited' | '<n> ETH'
+    baseBalanceEth: null,
+    baseWethBalanceEth: null,
+    baseSeaportAllowance: null,
+    baseRpcConfigured: !!config.wallet.baseRpcUrl,
     rpcConnected: false,
     apiKeyValid: false,
     errors: [],
@@ -351,7 +372,8 @@ async function getDiagnostics() {
 
   out.walletAddress = wallet.address;
 
-  const MIN_ETH_FOR_GAS = 0.001; // gas is cheap right now, especially on Base
+  const MIN_ETH_FOR_GAS = 0.001;
+  const { wethAddress: ethWeth, seaportAddress } = chainCfg('ethereum');
 
   try {
     const ethBal = await wallet.provider.getBalance(wallet.address);
@@ -364,16 +386,35 @@ async function getDiagnostics() {
       );
     }
 
-    const weth = new ethers.Contract(WETH_ADDRESS, WETH_ABI, wallet.provider);
+    const weth = new ethers.Contract(ethWeth, WETH_ABI, wallet.provider);
     const wethBal = await weth.balanceOf(wallet.address);
     out.wethBalanceEth = parseFloat(ethers.formatEther(wethBal)).toFixed(6);
 
-    const allowance = await weth.allowance(wallet.address, SEAPORT_ADDRESS);
+    const allowance = await weth.allowance(wallet.address, seaportAddress);
     out.seaportAllowance = allowance >= ethers.parseEther('1000')
       ? 'unlimited'
       : `${parseFloat(ethers.formatEther(allowance)).toFixed(4)} WETH`;
   } catch (err) {
     out.errors.push(`RPC error (check ETH_RPC_URL): ${err.message}`);
+  }
+
+  // Base chain diagnostics (only if BASE_RPC_URL is configured)
+  if (config.wallet.baseRpcUrl) {
+    try {
+      const baseWallet = walletUtils.getWalletForChain('base');
+      const { wethAddress: baseWeth } = chainCfg('base');
+      const baseBal = await baseWallet.provider.getBalance(wallet.address);
+      out.baseBalanceEth = parseFloat(ethers.formatEther(baseBal)).toFixed(6);
+      const bweth = new ethers.Contract(baseWeth, WETH_ABI, baseWallet.provider);
+      const bwethBal = await bweth.balanceOf(wallet.address);
+      out.baseWethBalanceEth = parseFloat(ethers.formatEther(bwethBal)).toFixed(6);
+      const bAllowance = await bweth.allowance(wallet.address, seaportAddress);
+      out.baseSeaportAllowance = bAllowance >= ethers.parseEther('1000')
+        ? 'unlimited'
+        : `${parseFloat(ethers.formatEther(bAllowance)).toFixed(4)} WETH`;
+    } catch (err) {
+      out.errors.push(`Base RPC error (check BASE_RPC_URL): ${err.message}`);
+    }
   }
 
   try {

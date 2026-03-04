@@ -8,6 +8,7 @@ const config = {
   wallet: {
     privateKey: process.env.WALLET_PRIVATE_KEY || '',
     rpcUrl: process.env.ETH_RPC_URL || '',
+    baseRpcUrl: process.env.BASE_RPC_URL || '',
   },
   trading: {
     maxBuyPriceEth: parseFloat(process.env.MAX_BUY_PRICE_ETH || '0.5'),

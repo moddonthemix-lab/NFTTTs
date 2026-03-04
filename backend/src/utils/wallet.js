@@ -8,7 +8,9 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../../data');
 const WALLET_FILE = path.join(DATA_DIR, 'wallet.json');
 
 let _provider = null;
+let _baseProvider = null;
 let _wallet = null;
+let _baseWallet = null;
 
 /**
  * Initialize provider from config RPC URL
@@ -24,6 +26,40 @@ function getProvider() {
 }
 
 /**
+ * Initialize Base chain provider. Requires BASE_RPC_URL in .env.
+ */
+function getBaseProvider() {
+  if (!_baseProvider) {
+    const url = config.wallet.baseRpcUrl;
+    if (!url) throw new Error('BASE_RPC_URL is not set in .env — required for Base chain trading');
+    _baseProvider = new ethers.JsonRpcProvider(url);
+  }
+  return _baseProvider;
+}
+
+/**
+ * Return the wallet connected to the appropriate chain's provider.
+ * Same private key — just a different network.
+ */
+function getWalletForChain(chain) {
+  if (!_wallet) return null;
+  if (!chain || chain === 'ethereum') return _wallet;
+  if (chain === 'base') {
+    // Lazily create the Base-connected wallet — reset whenever _wallet changes
+    if (!_baseWallet || _baseWallet.address !== _wallet.address) {
+      _baseWallet = _wallet.connect(getBaseProvider());
+    }
+    return _baseWallet;
+  }
+  return _wallet;
+}
+
+function _setWallet(w) {
+  _wallet = w;
+  _baseWallet = null; // invalidate derived Base wallet whenever main wallet changes
+}
+
+/**
  * Load wallet from private key string.
  * Credentials are saved to the data volume so the wallet auto-loads after restarts.
  */
@@ -31,7 +67,7 @@ function loadFromPrivateKey(privateKey) {
   try {
     const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
     const provider = getProvider();
-    _wallet = new ethers.Wallet(key, provider);
+    _setWallet(new ethers.Wallet(key, provider));
     saveWalletMeta({ address: _wallet.address, source: 'privateKey', privateKey: key });
     logger.info(`Wallet loaded: ${_wallet.address}`);
     return { address: _wallet.address };
@@ -48,7 +84,7 @@ function loadFromMnemonic(mnemonic, derivationPath = "m/44'/60'/0'/0/0") {
   try {
     const provider = getProvider();
     const hdWallet = ethers.HDNodeWallet.fromPhrase(mnemonic.trim(), null, derivationPath);
-    _wallet = hdWallet.connect(provider);
+    _setWallet(hdWallet.connect(provider));
     saveWalletMeta({ address: _wallet.address, source: 'mnemonic', mnemonic: mnemonic.trim(), derivationPath });
     logger.info(`Wallet loaded from mnemonic: ${_wallet.address}`);
     return { address: _wallet.address };
@@ -63,7 +99,7 @@ function loadFromMnemonic(mnemonic, derivationPath = "m/44'/60'/0'/0/0") {
 function createNewWallet() {
   const provider = getProvider();
   const newWallet = ethers.Wallet.createRandom().connect(provider);
-  _wallet = newWallet;
+  _setWallet(newWallet);
   const info = {
     address: newWallet.address,
     privateKey: newWallet.privateKey,
@@ -118,6 +154,7 @@ function saveWalletMeta(meta) {
 function forgetWallet() {
   if (fs.existsSync(WALLET_FILE)) fs.unlinkSync(WALLET_FILE);
   _wallet = null;
+  _baseWallet = null;
   logger.info('Wallet cleared');
 }
 
@@ -171,7 +208,9 @@ module.exports = {
   loadFromConfig,
   forgetWallet,
   getProvider,
+  getBaseProvider,
   getWallet,
+  getWalletForChain,
   getWalletAddress,
   getBalance,
   getWalletInfo,

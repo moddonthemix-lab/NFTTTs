@@ -119,9 +119,9 @@ async function runCycle() {
       if (opp.score >= 70) {
         const bidPrice = calcBidPrice(opp.floorPriceEth);
         if (config.autoTrade) {
-          await executeBid(opp.collectionSlug, bidPrice);
+          await executeBid(opp.collectionSlug, bidPrice, opp.chain);
         } else {
-          queueBidForApproval(opp.collectionSlug, bidPrice);
+          queueBidForApproval(opp.collectionSlug, bidPrice, opp.chain);
         }
       }
     }
@@ -150,7 +150,7 @@ async function evaluateSells(portfolio, currentBalanceEth) {
 
       if (flip.isProfitable) {
         if (config.autoTrade) {
-          await executeSell(nft, sellPrice, flip.profitEth);
+          await executeSell(nft, sellPrice, flip.profitEth, nft.chain || 'ethereum');
         } else {
           queueSellForApproval(nft, sellPrice, flip);
         }
@@ -268,10 +268,10 @@ async function executeBuy(opportunity) {
   }
 }
 
-async function executeSell(nft, priceEth, profitEth) {
+async function executeSell(nft, priceEth, profitEth, chain = 'ethereum') {
   try {
     logger.info(`Selling: ${nft.collectionName} #${nft.tokenId} @ ${priceEth} ETH`);
-    const result = await sellNFT(nft.contractAddress, nft.tokenId, priceEth);
+    const result = await sellNFT(nft.contractAddress, nft.tokenId, priceEth, 72, chain);
     db.removeFromPortfolio(nft.tokenId, nft.contractAddress);
     db.addTrade({
       type: 'sell',
@@ -291,10 +291,10 @@ async function executeSell(nft, priceEth, profitEth) {
   }
 }
 
-async function executeBid(collectionSlug, bidPriceEth) {
+async function executeBid(collectionSlug, bidPriceEth, chain = 'ethereum') {
   try {
-    logger.info(`Placing bid on ${collectionSlug} @ ${bidPriceEth} ETH`);
-    const result = await placeBid(collectionSlug, bidPriceEth);
+    logger.info(`Placing bid on ${collectionSlug} @ ${bidPriceEth} ETH [${chain}]`);
+    const result = await placeBid(collectionSlug, bidPriceEth, 24, chain);
     db.addBid({
       collectionSlug,
       offerAmountEth: bidPriceEth,
@@ -330,13 +330,14 @@ function queueForApproval(opportunity) {
   emit('approval:queued', { id, action: 'buy', opportunity });
 }
 
-function queueBidForApproval(collectionSlug, bidPriceEth) {
+function queueBidForApproval(collectionSlug, bidPriceEth, chain = 'ethereum') {
   const id = db.addPendingApproval({
     action: 'bid',
     collectionSlug,
     bidPriceEth,
+    chain,
   });
-  emit('approval:queued', { id, action: 'bid', collectionSlug, bidPriceEth });
+  emit('approval:queued', { id, action: 'bid', collectionSlug, bidPriceEth, chain });
 }
 
 function queueSellForApproval(nft, priceEth, flip) {
@@ -379,10 +380,11 @@ async function approveAction(approvalId) {
       collectionSlug: approval.collectionSlug,
       collectionName: approval.collectionName,
       buyPriceEth: approval.buyPriceEth,
+      chain: approval.chain || 'ethereum',
     };
-    await executeSell(nft, approval.priceEth, approval.flip?.profitEth || 0);
+    await executeSell(nft, approval.priceEth, approval.flip?.profitEth || 0, nft.chain);
   } else if (approval.action === 'bid') {
-    await executeBid(approval.collectionSlug, approval.bidPriceEth);
+    await executeBid(approval.collectionSlug, approval.bidPriceEth, approval.chain || 'ethereum');
   }
 
   return approval;
