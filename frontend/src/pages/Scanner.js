@@ -570,7 +570,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                 </div>
                 {sweepResult.results?.map((r, i) => (
                   <div key={i} style={{ color: r.success ? '#94a3b8' : '#ef4444', marginBottom: 2 }} className="mono">
-                    #{i + 1} {r.priceEth?.toFixed(4)} ETH — {r.success ? `✓ ${r.txHash?.slice(0, 10)}…` : `✗ ${r.error}`}
+                    #{i + 1} {r.priceEth != null ? (r.priceEth < 0.0001 ? r.priceEth.toFixed(8) : r.priceEth.toFixed(4)) : '?'} ETH — {r.success ? `✓ ${r.txHash?.slice(0, 10)}…` : `✗ ${r.error}`}
                   </div>
                 ))}
               </div>
