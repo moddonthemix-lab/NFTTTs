@@ -88,18 +88,31 @@ async function waitForConfirmation(tx) {
 }
 
 async function ensureWETH(wallet, amountWei, chain = 'ethereum') {
-  const { wethAddress, seaportAddress } = chainCfg(chain);
+  const { wethAddress } = chainCfg(chain);
   const weth = new ethers.Contract(wethAddress, WETH_ABI, wallet);
-  const balance = await weth.balanceOf(wallet.address);
-  if (balance < amountWei) {
-    const needed = amountWei - balance;
-    logger.info(`[${chain}] Wrapping ${ethers.formatEther(needed)} ETH -> WETH`);
-    const tx = await weth.deposit({ value: needed });
-    await waitForConfirmation(tx);
-    logger.info('WETH wrap confirmed');
-  } else {
-    logger.info(`WETH OK: ${ethers.formatEther(balance)} available`);
+  const wethBalance = await weth.balanceOf(wallet.address);
+  if (wethBalance >= amountWei) {
+    logger.info(`WETH OK: ${ethers.formatEther(wethBalance)} available`);
+    return;
   }
+
+  const needed = amountWei - wethBalance;
+  const ethBalance = await wallet.provider.getBalance(wallet.address);
+  if (ethBalance < needed) {
+    throw new Error(
+      `Insufficient ETH on ${chain} to wrap into WETH.\n` +
+      `  Wallet:       ${wallet.address}\n` +
+      `  ETH balance:  ${ethers.formatEther(ethBalance)} ETH\n` +
+      `  WETH balance: ${ethers.formatEther(wethBalance)} WETH\n` +
+      `  Need to wrap: ${ethers.formatEther(needed)} ETH\n` +
+      `  → Bridge or deposit ETH to this wallet on ${chain} first.`
+    );
+  }
+
+  logger.info(`[${chain}] Wrapping ${ethers.formatEther(needed)} ETH -> WETH`);
+  const tx = await weth.deposit({ value: needed });
+  await waitForConfirmation(tx);
+  logger.info('WETH wrap confirmed');
 }
 
 async function approveWETH(wallet, amountWei, chain = 'ethereum') {
