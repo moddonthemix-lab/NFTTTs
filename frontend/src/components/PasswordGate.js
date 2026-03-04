@@ -75,7 +75,7 @@ export default function PasswordGate({ children }) {
     <div style={s.overlay}>
       <div style={s.box}>
         <div style={s.icon}>◈</div>
-        <h1 style={s.title}>NFT Trading Bot</h1>
+        <h1 style={s.title}>NFT Claw Machine</h1>
         <p style={s.sub}>Enter your dashboard password to continue</p>
         <form onSubmit={handleSubmit} style={s.form}>
           <input

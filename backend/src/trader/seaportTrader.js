@@ -74,6 +74,19 @@ const WETH_ABI = [
 
 const osHeaders = () => ({ 'X-API-KEY': config.opensea.apiKey, 'Content-Type': 'application/json' });
 
+// Wraps axios so 4xx/5xx errors include the actual OpenSea response body.
+async function osPost(url, data, cfg) {
+  try {
+    return await axios.post(url, data, cfg);
+  } catch (err) {
+    if (err.response) {
+      const body = JSON.stringify(err.response.data);
+      throw new Error(`OpenSea ${err.response.status} from ${url.split('/').pop()}: ${body}`);
+    }
+    throw err;
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function waitForConfirmation(tx) {
@@ -208,7 +221,7 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, ch
 
   // Step 1: ask OpenSea for the zone / criteria consideration for this collection
   logger.info('Calling /offers/build...');
-  const buildRes = await axios.post(
+  const buildRes = await osPost(
     `${config.opensea.apiBase}/offers/build`,
     {
       criteria:         { collection: { slug: collectionSlug } },
@@ -265,7 +278,7 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, ch
 
   // Step 4: submit to OpenSea
   logger.info('Submitting to /offers...');
-  const submitRes = await axios.post(
+  const submitRes = await osPost(
     `${config.opensea.apiBase}/offers`,
     {
       criteria:          { collection: { slug: collectionSlug } },

@@ -20,7 +20,7 @@ export default function Sidebar({ connected, botRunning, pendingCount }) {
       <div style={styles.logo}>
         <span style={styles.logoIcon}>⬡</span>
         <div>
-          <div style={styles.logoTitle}>NFT Bot</div>
+          <div style={styles.logoTitle}>NFT Claw Machine</div>
           <div style={styles.logoSub}>Trading Engine</div>
         </div>
       </div>
@@ -57,7 +57,7 @@ export default function Sidebar({ connected, botRunning, pendingCount }) {
       </nav>
 
       <div style={styles.footer}>
-        <div style={styles.footerText}>NFT Trading Bot v1.0</div>
+        <div style={styles.footerText}>NFT Claw Machine v1.0</div>
         <div style={{ ...styles.footerText, color: '#64748b' }}>Use at your own risk</div>
       </div>
     </aside>

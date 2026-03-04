@@ -564,7 +564,7 @@ if (isProd) {
 // Railway injects PORT automatically; fallback to config for local dev
 const PORT = process.env.PORT || config.server.port;
 httpServer.listen(PORT, () => {
-  logger.info(`NFT Trading Bot server running on port ${PORT}`);
+  logger.info(`NFT Claw Machine server running on port ${PORT}`);
 
   // Auto-load wallet from config if key is set
   const loaded = walletUtils.loadFromConfig();
