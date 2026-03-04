@@ -8,17 +8,22 @@ const TX_CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Seaport v1.6 is deployed at the same address on all supported chains (CREATE2)
 const SEAPORT_ADDRESS = '0x0000000000000068F116a894984e2DB1123eB395';
+// OpenSea conduit — Seaport pulls tokens through this, not directly.
+// WETH approval must target the conduit, not Seaport itself.
+const OS_CONDUIT_ADDRESS = '0x1E0049783F008A0085193E00003D00cd54003c71';
 
 // Per-chain config
 const CHAIN_CONFIG = {
   ethereum: {
     chainId: 1,
     seaportAddress: SEAPORT_ADDRESS,
+    conduitAddress: OS_CONDUIT_ADDRESS,
     wethAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   },
   base: {
     chainId: 8453,
     seaportAddress: SEAPORT_ADDRESS,
+    conduitAddress: OS_CONDUIT_ADDRESS,
     wethAddress: '0x4200000000000000000000000000000000000006',
   },
 };
@@ -129,16 +134,16 @@ async function ensureWETH(wallet, amountWei, chain = 'ethereum') {
 }
 
 async function approveWETH(wallet, amountWei, chain = 'ethereum') {
-  const { wethAddress, seaportAddress } = chainCfg(chain);
+  const { wethAddress, conduitAddress } = chainCfg(chain);
   const weth = new ethers.Contract(wethAddress, WETH_ABI, wallet);
-  const allowance = await weth.allowance(wallet.address, seaportAddress);
+  const allowance = await weth.allowance(wallet.address, conduitAddress);
   if (allowance < amountWei) {
-    logger.info(`[${chain}] Approving Seaport to spend WETH (one-time gas cost)...`);
-    const tx = await weth.approve(seaportAddress, ethers.MaxUint256);
+    logger.info(`[${chain}] Approving OpenSea conduit to spend WETH (one-time gas cost)...`);
+    const tx = await weth.approve(conduitAddress, ethers.MaxUint256);
     await waitForConfirmation(tx);
-    logger.info('Seaport WETH approval confirmed');
+    logger.info('Conduit WETH approval confirmed');
   } else {
-    logger.info('Seaport WETH allowance already sufficient');
+    logger.info('Conduit WETH allowance already sufficient');
   }
 }
 
