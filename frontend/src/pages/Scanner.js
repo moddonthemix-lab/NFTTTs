@@ -83,7 +83,9 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
     if (!window.confirm(`Snipe floor of ${name}? This will immediately buy the cheapest listing.`)) return;
     try {
       const result = await tradesApi.snipe(slug);
-      alert(`Sniped! Paid ${result.priceEth?.toFixed(4)} ETH. TX: ${result.txHash}`);
+      const eth = result.priceEth ?? 0;
+      const priceStr = eth < 0.0001 ? eth.toFixed(8) : eth.toFixed(4);
+      alert(`Sniped! Paid ${priceStr} ETH. TX: ${result.txHash}`);
     } catch (err) {
       alert(`Snipe failed: ${err.message}`);
     }
