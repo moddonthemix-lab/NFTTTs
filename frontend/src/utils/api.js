@@ -50,7 +50,9 @@ export const portfolioApi = {
 export const tradesApi = {
   get: (limit = 100) => api.get('/trades', { params: { limit } }).then((r) => r.data),
   buy: (listing) => api.post('/trade/buy', { listing }).then((r) => r.data),
-  sell: (contractAddress, tokenId, priceEth) => api.post('/trade/sell', { contractAddress, tokenId, priceEth }).then((r) => r.data),
+  sell: (contractAddress, tokenId, priceEth, chain = 'ethereum') => api.post('/trade/sell', { contractAddress, tokenId, priceEth, chain }).then((r) => r.data),
+  acceptOffer: (contractAddress, tokenId, collectionSlug, chain = 'ethereum') => api.post('/trade/accept-offer', { contractAddress, tokenId, collectionSlug, chain }).then((r) => r.data),
+  getBestOffer: (contractAddress, tokenId, slug, chain = 'ethereum') => api.get(`/portfolio/${contractAddress}/${tokenId}/best-offer`, { params: { slug, chain } }).then((r) => r.data),
   snipe: (slug) => api.post(`/trade/snipe/${slug}`).then((r) => r.data),
   sweep: (slug, count, maxPriceEth) => api.post('/trade/sweep', { slug, count, maxPriceEth }).then((r) => r.data),
 };

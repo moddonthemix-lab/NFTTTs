@@ -74,7 +74,7 @@ function AppInner() {
             <Route path="/favorites" element={<Favorites />} />
             <Route
               path="/portfolio"
-              element={<Portfolio portfolio={portfolio} />}
+              element={<Portfolio portfolio={portfolio} ethPrice={ethPrice} />}
             />
             <Route
               path="/approvals"

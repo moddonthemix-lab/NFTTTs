@@ -12,7 +12,7 @@ const config = {
   },
   trading: {
     maxBuyPriceEth: parseFloat(process.env.MAX_BUY_PRICE_ETH || '0.5'),
-    minProfitMargin: parseFloat(process.env.MIN_PROFIT_MARGIN || '0.02'),
+    minProfitMargin: parseFloat(process.env.MIN_PROFIT_MARGIN || '0.30'),
     maxBudgetEth: parseFloat(process.env.MAX_BUDGET_ETH || '2.0'),
     bidFraction: parseFloat(process.env.BID_FRACTION || '0.85'),
     maxPortfolioSize: parseInt(process.env.MAX_PORTFOLIO_SIZE || '10'),
@@ -20,7 +20,7 @@ const config = {
   scanner: {
     intervalSeconds: parseInt(process.env.SCAN_INTERVAL_SECONDS || '60'),
     minCollectionVolume: parseFloat(process.env.MIN_COLLECTION_VOLUME || '1'),
-    minFloorPrice: parseFloat(process.env.MIN_FLOOR_PRICE || '0.05'),
+    minFloorPrice: parseFloat(process.env.MIN_FLOOR_PRICE || '0.01'),
     maxFloorPrice: parseFloat(process.env.MAX_FLOOR_PRICE || '2.0'),
   },
   server: {

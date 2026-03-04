@@ -14,7 +14,7 @@ const { scanForOpportunities, scanCollection, setEmitter: setScanEmitter } = req
 const openSeaApi = require('./scanner/openSeaApi');
 const { getEthPriceUsd } = openSeaApi;
 const botEngine = require('./trader/botEngine');
-const { buyNFT, placeBid, sellNFT, cancelOrder, getDiagnostics } = require('./trader/seaportTrader');
+const { buyNFT, placeBid, sellNFT, acceptBestOffer, cancelOrder, getDiagnostics } = require('./trader/seaportTrader');
 const { weiToEth } = require('./analyzer/scorer');
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -337,33 +337,42 @@ app.delete('/api/bids/:orderHash', async (req, res) => {
   }
 });
 
-app.post('/api/bids/:orderHash/fill', (req, res) => {
+app.post('/api/bids/:orderHash/fill', async (req, res) => {
   try {
     const { orderHash } = req.params;
     const bids = db.getBids();
     const bid = bids.find((b) => b.orderHash === orderHash);
     if (!bid) return res.status(404).json({ error: 'Bid not found' });
 
+    // Try to find the actual NFT token received in the wallet for this collection
+    let tokenId = null;
+    let contractAddress = null;
+    if (walletUtils.isConnected()) {
+      try {
+        const wallet = walletUtils.getWallet();
+        const { nfts } = await openSeaApi.getNFTsByOwner(wallet.address, 50, null, bid.chain || 'ethereum');
+        const portfolioKeys = new Set(db.getPortfolio().map((n) => `${n.contractAddress?.toLowerCase()}-${n.tokenId}`));
+        const match = nfts.find(
+          (n) => n.collection === bid.collectionSlug && !portfolioKeys.has(`${n.contract?.toLowerCase()}-${n.identifier}`)
+        );
+        if (match) { tokenId = match.identifier; contractAddress = match.contract; }
+      } catch { /* best-effort */ }
+    }
+
     const trade = {
-      type: 'buy',
-      collectionSlug: bid.collectionSlug,
-      collectionName: bid.collectionSlug,
-      priceEth: parseFloat(bid.offerAmountEth || 0),
-      source: 'bid_fill',
-      orderHash,
+      type: 'buy', collectionSlug: bid.collectionSlug, collectionName: bid.collectionSlug,
+      tokenId, contractAddress, priceEth: parseFloat(bid.offerAmountEth || 0), source: 'bid_fill', orderHash,
     };
     const portfolioEntry = {
-      collectionSlug: bid.collectionSlug,
-      collectionName: bid.collectionSlug,
-      buyPriceEth: parseFloat(bid.offerAmountEth || 0),
-      chain: bid.chain || 'ethereum',
-      acquiredVia: 'bid_fill',
+      collectionSlug: bid.collectionSlug, collectionName: bid.collectionSlug,
+      tokenId, contractAddress, buyPriceEth: parseFloat(bid.offerAmountEth || 0),
+      chain: bid.chain || 'ethereum', acquiredVia: 'bid_fill',
     };
     db.removeBidByOrderHash(orderHash);
     db.addTrade(trade);
     db.addToPortfolio(portfolioEntry);
     io.emit('trade:bid_filled', { ...bid, trade, portfolioEntry });
-    res.json({ success: true });
+    res.json({ success: true, tokenId, contractAddress });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -479,6 +488,40 @@ app.post('/api/trade/sell', async (req, res) => {
     }
     const result = await sellNFT(contractAddress, tokenId, priceEth, 72, chain);
     res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/trade/accept-offer', async (req, res) => {
+  try {
+    const { contractAddress, tokenId, collectionSlug, chain = 'ethereum' } = req.body;
+    if (!contractAddress || !tokenId || !collectionSlug) {
+      return res.status(400).json({ error: 'contractAddress, tokenId, collectionSlug required' });
+    }
+    const result = await acceptBestOffer(contractAddress, tokenId, collectionSlug, chain);
+    // Remove from portfolio and record as sell trade
+    db.removeFromPortfolio(tokenId, contractAddress);
+    db.addTrade({ type: 'sell', collectionSlug, contractAddress, tokenId, priceEth: result.offerPriceEth, txHash: result.txHash, source: 'accept_offer' });
+    io.emit('trade:sell', { collectionSlug, contractAddress, tokenId, priceEth: result.offerPriceEth, txHash: result.txHash });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fetch the best offer price for a specific NFT (for display in Portfolio)
+app.get('/api/portfolio/:contractAddress/:tokenId/best-offer', async (req, res) => {
+  try {
+    const { contractAddress, tokenId } = req.params;
+    const { slug, chain = 'ethereum' } = req.query;
+    if (!slug) return res.status(400).json({ error: 'slug query param required' });
+    const offerRes = await openSeaApi.getOffers(slug, tokenId);
+    const best = offerRes?.[0];
+    const priceEth = best?.current_price
+      ? parseFloat(require('ethers').formatEther(best.current_price))
+      : null;
+    res.json({ priceEth, orderHash: best?.order_hash || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

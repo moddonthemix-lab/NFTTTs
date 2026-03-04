@@ -539,4 +539,85 @@ async function getDiagnostics() {
   return out;
 }
 
-module.exports = { buyNFT, placeBid, sellNFT, cancelOrder, getDiagnostics };
+const ERC721_ABI = [
+  'function isApprovedForAll(address owner, address operator) view returns (bool)',
+  'function setApprovalForAll(address operator, bool approved) external',
+];
+
+/**
+ * Accept the best existing offer on a specific NFT.
+ * This sells the NFT immediately for WETH to whoever placed the highest offer.
+ */
+async function acceptBestOffer(contractAddress, tokenId, collectionSlug, chain = 'ethereum') {
+  const wallet = walletUtils.getWalletForChain(chain);
+  if (!wallet) throw new Error('No wallet connected.');
+
+  const { seaportAddress, conduitAddress } = chainCfg(chain);
+  logger.info(`[${chain}] Accepting best offer for ${contractAddress}/${tokenId}`);
+
+  // Step 1: fetch the best offer for this specific token
+  const offerRes = await axios.get(
+    `${config.opensea.apiBase}/offers/collection/${collectionSlug}/nfts/${tokenId}/best`,
+    { headers: osHeaders() }
+  );
+  const offer = offerRes.data?.offers?.[0];
+  if (!offer) throw new Error('No offers found for this NFT on OpenSea');
+
+  const offerPriceEth = parseFloat(ethers.formatEther(offer.current_price || '0'));
+  logger.info(`Best offer: ${offerPriceEth} ETH (order ${offer.order_hash})`);
+
+  // Step 2: ensure conduit is approved to transfer our NFT
+  const erc721 = new ethers.Contract(contractAddress, ERC721_ABI, wallet);
+  const isApproved = await erc721.isApprovedForAll(wallet.address, conduitAddress);
+  if (!isApproved) {
+    logger.info(`Approving OpenSea conduit to transfer NFTs from ${contractAddress}...`);
+    const approveTx = await erc721.setApprovalForAll(conduitAddress, true);
+    await waitForConfirmation(approveTx);
+    logger.info('NFT conduit approval confirmed');
+  }
+
+  // Step 3: get fulfillment transaction from OpenSea
+  const fulfillRes = await osPost(
+    `${config.opensea.apiBase}/offers/fulfillment_data`,
+    {
+      offer: {
+        hash: offer.order_hash,
+        chain,
+        protocol_address: seaportAddress,
+      },
+      fulfiller: { address: wallet.address },
+    },
+    { headers: osHeaders() }
+  );
+
+  const txParams = fulfillRes.data?.fulfillment_data?.transaction;
+  if (!txParams) throw new Error(`OpenSea did not return fulfillment tx: ${JSON.stringify(fulfillRes.data)}`);
+
+  // Step 4: send the transaction (same encoding pattern as buyNFT)
+  let calldata;
+  if (typeof txParams.input_data === 'string') {
+    calldata = txParams.input_data;
+  } else if (txParams.input_data?.parameters) {
+    const iface = new ethers.Interface([
+      'function fulfillBasicOrder((address considerationToken, uint256 considerationIdentifier, uint256 considerationAmount, address offerer, address zone, address offerToken, uint256 offerIdentifier, uint256 offerAmount, uint8 basicOrderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 offererConduitKey, bytes32 fulfillerConduitKey, uint256 totalOriginalAdditionalRecipients, (uint256 amount, address recipient)[] additionalRecipients, bytes signature) parameters) payable returns (bool)',
+    ]);
+    calldata = iface.encodeFunctionData('fulfillBasicOrder', [txParams.input_data.parameters]);
+  } else {
+    throw new Error(`Unsupported input_data format: ${JSON.stringify(txParams.input_data).slice(0, 200)}`);
+  }
+
+  const tx = await wallet.sendTransaction({
+    to: txParams.to,
+    data: calldata,
+    value: BigInt(txParams.value || '0'),
+    gasLimit: BigInt(txParams.gas || '300000'),
+  });
+
+  logger.info(`Accept-offer TX sent: ${tx.hash}`);
+  const receipt = await waitForConfirmation(tx);
+  logger.info(`Accept-offer confirmed: ${receipt.hash} (block ${receipt.blockNumber})`);
+
+  return { txHash: receipt.hash, blockNumber: receipt.blockNumber, offerPriceEth };
+}
+
+module.exports = { buyNFT, placeBid, sellNFT, acceptBestOffer, cancelOrder, getDiagnostics };
