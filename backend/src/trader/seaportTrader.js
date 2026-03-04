@@ -186,7 +186,10 @@ async function buyNFT(listing) {
 // ─── Bid (collection offer) ───────────────────────────────────────────────────
 
 // OpenSea conduit key — same on all chains
-const OS_CONDUIT_KEY = '0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000';
+const OS_CONDUIT_KEY    = '0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000';
+// OpenSea protocol fee recipient — same on all chains (100 bps = 1%)
+const OS_FEE_RECIPIENT  = '0x0000a26b00c1F0DF003000390027140000fAa719';
+const OS_FEE_BASIS_PTS  = 100n; // 1%
 
 const SEAPORT_ABI = [
   'function getCounter(address offerer) view returns (uint256)',
@@ -247,7 +250,20 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, ch
   logger.info(`Seaport counter: ${counter}`);
 
   // Step 3: assemble the full Seaport OrderComponents
-  const salt   = ethers.toBigInt(ethers.randomBytes(32)).toString();
+  const salt    = ethers.toBigInt(ethers.randomBytes(32)).toString();
+  const feeAmt  = (offerAmountWei * OS_FEE_BASIS_PTS / 10000n).toString();
+  const consideration = [
+    ...partial.consideration,
+    // OpenSea protocol fee: 1% of WETH offer amount
+    {
+      itemType:             1,   // ERC20 (WETH)
+      token:                wethAddress,
+      identifierOrCriteria: '0',
+      startAmount:          feeAmt,
+      endAmount:            feeAmt,
+      recipient:            OS_FEE_RECIPIENT,
+    },
+  ];
   const params = {
     offerer:    wallet.address,
     zone:       partial.zone,
@@ -260,14 +276,14 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, ch
         endAmount:            offerAmountWei.toString(),
       },
     ],
-    consideration:                    partial.consideration,
+    consideration,
     orderType:                        2,   // FULL_RESTRICTED
     startTime:                        now.toString(),
     endTime:                          expiration.toString(),
     zoneHash:                         partial.zoneHash,
     salt,
     conduitKey:                       OS_CONDUIT_KEY,
-    totalOriginalConsiderationItems:  partial.consideration.length,
+    totalOriginalConsiderationItems:  consideration.length,
     counter:                          counter.toString(),
   };
 
