@@ -17,7 +17,8 @@ export default function WhaleTracker({ ethPrice }) {
 
   const [expanded, setExpanded] = useState(null);
   const [holdings, setHoldings] = useState({});
-  const [loadingNfts, setLoadingNfts] = useState(null);
+  const [loadingNfts, setLoadingNfts] = useState(null); // address being fetched
+  const [fullScanning, setFullScanning] = useState(null); // address doing full scan
 
   useEffect(() => {
     whaleApi.get().then(setWhales).catch(() => {}).finally(() => setLoadingList(false));
@@ -52,12 +53,23 @@ export default function WhaleTracker({ ethPrice }) {
     if (holdings[address]) return;
     setLoadingNfts(address);
     try {
-      const data = await whaleApi.getNfts(address);
+      const data = await whaleApi.getNfts(address, false); // fast preview
       setHoldings((prev) => ({ ...prev, [address]: data }));
     } catch (err) {
       setHoldings((prev) => ({ ...prev, [address]: { error: err.message } }));
     }
     setLoadingNfts(null);
+  };
+
+  const handleFullScan = async (address) => {
+    setFullScanning(address);
+    try {
+      const data = await whaleApi.getNfts(address, true); // full scan
+      setHoldings((prev) => ({ ...prev, [address]: data }));
+    } catch (err) {
+      setHoldings((prev) => ({ ...prev, [address]: { ...holdings[address], fullScanError: err.message } }));
+    }
+    setFullScanning(null);
   };
 
   const fmt = (n) => n?.toFixed(4) ?? '—';
@@ -139,7 +151,8 @@ export default function WhaleTracker({ ethPrice }) {
 
               {isOpen && (
                 <div style={styles.holdingsSection}>
-                  {isLoading && <div style={styles.loadingMsg}>Fetching NFTs from OpenSea...</div>}
+                  {isLoading && <div style={styles.loadingMsg}>Quick scan — fetching top collections...</div>}
+                  {fullScanning === whale.address && <div style={styles.loadingMsg}>Full scan — fetching all NFTs (may take a moment)...</div>}
                   {data?.error && <div style={styles.errorMsg}>{data.error}</div>}
 
                   {data && !data.error && (
@@ -163,9 +176,30 @@ export default function WhaleTracker({ ethPrice }) {
                             <span style={styles.summaryUsd}>{fmtUsd(data.netValueEth, ethPrice)}</span>
                           )}
                         </div>
-                        {data.truncated && (
-                          <div style={styles.truncNote}>2000+ NFTs — showing first 2000</div>
-                        )}
+                        <div style={{ ...styles.summaryItem, alignItems: 'flex-start', justifyContent: 'center', borderRight: 'none' }}>
+                          {!data.fullScan ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+                              <span style={styles.summaryLabel}>Scan</span>
+                              <span style={{ fontSize: 11, color: '#64748b', textAlign: 'center' }}>
+                                Top 10 collections shown
+                              </span>
+                              <button
+                                style={styles.btnFullScan}
+                                onClick={() => handleFullScan(whale.address)}
+                                disabled={fullScanning === whale.address}
+                              >
+                                {fullScanning === whale.address ? '⟳ Scanning...' : '⊕ Full Scan'}
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+                              <span style={styles.summaryLabel}>Scan</span>
+                              <span style={{ fontSize: 11, color: '#22c55e' }}>
+                                {data.truncated ? '2000+ NFTs (capped)' : 'All NFTs scanned'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Collection list — compact rows, no image grids */}
@@ -263,7 +297,7 @@ const styles = {
   summaryLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   summaryVal: { fontSize: 18, fontWeight: 700 },
   summaryUsd: { fontSize: 11, color: '#475569', marginTop: 2 },
-  truncNote: { flex: 'none', padding: '12px 16px', color: '#64748b', fontSize: 11, alignSelf: 'center' },
+  btnFullScan: { padding: '4px 12px', borderRadius: 6, border: '1px solid #6366f1', background: 'transparent', color: '#818cf8', fontSize: 11, fontWeight: 600, cursor: 'pointer', marginTop: 2 },
   // Compact collection list
   colList: { padding: '8px 16px 16px' },
   colListHeader: { display: 'flex', alignItems: 'center', padding: '6px 10px', fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #1e293b', marginBottom: 4 },

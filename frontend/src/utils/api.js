@@ -89,7 +89,7 @@ export const whaleApi = {
   get: () => api.get('/whales').then((r) => r.data),
   add: (address, label) => api.post('/whales', { address, label }).then((r) => r.data),
   remove: (address) => api.delete(`/whales/${address}`).then((r) => r.data),
-  getNfts: (address) => api.get(`/whales/${address}/nfts`).then((r) => r.data),
+  getNfts: (address, full = false) => api.get(`/whales/${address}/nfts`, { params: full ? { full: 'true' } : {} }).then((r) => r.data),
 };
 
 export default api;
