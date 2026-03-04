@@ -214,21 +214,32 @@ async function detectBidFills(bids) {
         acquiredVia: 'bid_fill',
       });
 
-      db.addTrade({
+      const trade = {
         type: 'buy',
         collectionSlug: nft.collection,
         collectionName: nft.collection,
         tokenId: nft.identifier,
         contractAddress: nft.contract,
         priceEth,
-        note: 'bid_fill',
-      });
+        source: 'bid_fill',
+      };
+      db.addTrade(trade);
 
       emit('trade:bid_filled', {
         collectionSlug: nft.collection,
         tokenId: nft.identifier,
         contractAddress: nft.contract,
         offerAmountEth: filledBid?.offerAmountEth,
+        orderHash: filledBid?.orderHash,
+        trade,
+        portfolioEntry: {
+          collectionSlug: nft.collection,
+          collectionName: nft.collection,
+          contractAddress: nft.contract,
+          tokenId: nft.identifier,
+          buyPriceEth: priceEth,
+          acquiredVia: 'bid_fill',
+        },
       });
 
       if (filledBid?.orderHash) {
@@ -401,6 +412,7 @@ module.exports = {
   stopBot,
   isBotRunning,
   runCycle,
+  manageBids,
   approveAction,
   rejectAction,
   setEmitter,

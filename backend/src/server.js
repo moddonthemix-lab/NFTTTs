@@ -343,9 +343,26 @@ app.post('/api/bids/:orderHash/fill', (req, res) => {
     const bids = db.getBids();
     const bid = bids.find((b) => b.orderHash === orderHash);
     if (!bid) return res.status(404).json({ error: 'Bid not found' });
+
+    const trade = {
+      type: 'buy',
+      collectionSlug: bid.collectionSlug,
+      collectionName: bid.collectionSlug,
+      priceEth: parseFloat(bid.offerAmountEth || 0),
+      source: 'bid_fill',
+      orderHash,
+    };
+    const portfolioEntry = {
+      collectionSlug: bid.collectionSlug,
+      collectionName: bid.collectionSlug,
+      buyPriceEth: parseFloat(bid.offerAmountEth || 0),
+      chain: bid.chain || 'ethereum',
+      acquiredVia: 'bid_fill',
+    };
     db.removeBidByOrderHash(orderHash);
-    db.addTrade({ type: 'buy', collectionSlug: bid.collectionSlug, priceEth: bid.offerAmountEth, source: 'bid_fill', orderHash });
-    io.emit('trade:bid_filled', { collectionSlug: bid.collectionSlug, offerAmountEth: bid.offerAmountEth, orderHash });
+    db.addTrade(trade);
+    db.addToPortfolio(portfolioEntry);
+    io.emit('trade:bid_filled', { ...bid, trade, portfolioEntry });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -598,6 +615,19 @@ httpServer.listen(PORT, () => {
   if (loaded) {
     logger.info(`Wallet loaded: ${loaded.address}`);
   }
+
+  // Standalone bid fill monitor — runs every 90s whether or not the bot is active.
+  // Skipped when the bot is running (it already calls manageBids internally).
+  setInterval(async () => {
+    try {
+      if (!botEngine.isBotRunning() && walletUtils.isConnected() && db.getBids().length > 0) {
+        logger.info('Bid monitor: checking for fills...');
+        await botEngine.manageBids();
+      }
+    } catch (err) {
+      logger.warn(`Bid monitor error: ${err.message}`);
+    }
+  }, 90_000);
 });
 
 module.exports = { app, io };

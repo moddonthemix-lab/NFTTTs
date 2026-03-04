@@ -92,8 +92,10 @@ export function useSocket() {
     });
     socket.on('trade:error', (d) => addLog('error', `Trade error (${d.action}): ${d.error}`));
     socket.on('trade:bid_filled', (d) => {
-      addLog('success', `Bid filled! ${d.collectionSlug} #${d.tokenId} acquired @ ${d.offerAmountEth} ETH`);
-      // portfolio update arrives via next bot cycle; no optimistic insert needed
+      addLog('success', `Bid filled! ${d.collectionSlug} acquired @ ${d.offerAmountEth} ETH`);
+      if (d.trade) setTrades((prev) => [d.trade, ...prev]);
+      if (d.portfolioEntry) setPortfolio((prev) => [...prev, d.portfolioEntry]);
+      if (d.orderHash) setBids((prev) => prev.filter((b) => b.orderHash !== d.orderHash));
     });
 
     // Wallet
