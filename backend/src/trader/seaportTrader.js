@@ -193,14 +193,14 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, ch
     quantity: 1,
     offer_protected: false,
     offerer: wallet.address,
+    // Tell OpenSea the WETH amount — recipient omitted (not needed in build request)
     consideration: [
       {
-        item_type: 1,                         // ERC20 = WETH
+        item_type: 1,
         token: wethAddress,
         identifier_or_criteria: '0',
         start_amount: offerAmountWei.toString(),
         end_amount: offerAmountWei.toString(),
-        recipient: wallet.address,
       },
     ],
     expiration_time: expiration.toString(),
@@ -217,12 +217,26 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, ch
   if (!partialOrder?.parameters) {
     throw new Error(`/offers/build missing parameters. Got: ${JSON.stringify(buildRes.data)}`);
   }
-  logger.info('Got order parameters, signing...');
+
+  const params = partialOrder.parameters;
+
+  // OpenSea may return a template with a zero or stale WETH amount.
+  // Always force the offer[0] amounts to exactly what was requested.
+  if (params.offer?.[0]) {
+    params.offer[0].startAmount = offerAmountWei.toString();
+    params.offer[0].endAmount   = offerAmountWei.toString();
+    params.offer[0].token       = wethAddress; // ensure correct WETH for this chain
+  } else {
+    throw new Error(`/offers/build returned no offer items in parameters. Got: ${JSON.stringify(params)}`);
+  }
+
+  logger.info(`Signing: ${ethers.formatEther(offerAmountWei)} WETH offer, ${params.consideration?.length || 0} consideration items`);
+  logger.info(`Offerer: ${params.offerer} | Counter: ${params.counter} | Zone: ${params.zone}`);
 
   const signature = await wallet.signTypedData(
     seaportDomain(chain),
     SEAPORT_ORDER_TYPES,
-    partialOrder.parameters
+    params
   );
   logger.info(`Signed: ${signature.slice(0, 22)}...`);
 
@@ -233,12 +247,16 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, ch
       criteria: { collection: { slug: collectionSlug } },
       protocol_address: seaportAddress,
       protocol_data: {
-        parameters: partialOrder.parameters,
+        parameters: params,
         signature,
       },
     },
     { headers: osHeaders() }
   );
+
+  if (submitRes.data?.errors?.length) {
+    throw new Error(`OpenSea rejected offer: ${JSON.stringify(submitRes.data.errors)}`);
+  }
 
   const orderHash = submitRes.data?.order_hash || submitRes.data?.order?.order_hash;
   logger.info(`Bid live on ${collectionSlug}: order ${orderHash}`);
