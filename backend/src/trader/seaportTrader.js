@@ -351,10 +351,18 @@ async function getDiagnostics() {
 
   out.walletAddress = wallet.address;
 
+  const MIN_ETH_FOR_GAS = 0.02; // WETH wrap + Seaport approval cost ~$5-15 in gas
+
   try {
     const ethBal = await wallet.provider.getBalance(wallet.address);
     out.ethBalanceEth = parseFloat(ethers.formatEther(ethBal)).toFixed(6);
     out.rpcConnected = true;
+
+    if (parseFloat(out.ethBalanceEth) < MIN_ETH_FOR_GAS) {
+      out.errors.push(
+        `ETH balance too low (${out.ethBalanceEth} ETH). Need at least ${MIN_ETH_FOR_GAS} ETH for gas (WETH wrap + Seaport approval). Add ETH to ${wallet.address}`
+      );
+    }
 
     const weth = new ethers.Contract(WETH_ADDRESS, WETH_ABI, wallet.provider);
     const wethBal = await weth.balanceOf(wallet.address);
@@ -375,7 +383,7 @@ async function getDiagnostics() {
     out.errors.push(`OpenSea API key: HTTP ${err.response?.status} — ${err.response?.data?.detail || err.message}`);
   }
 
-  out.ready = out.rpcConnected && out.apiKeyValid && parseFloat(out.ethBalanceEth || 0) > 0;
+  out.ready = out.rpcConnected && out.apiKeyValid && parseFloat(out.ethBalanceEth || 0) >= MIN_ETH_FOR_GAS && out.errors.length === 0;
   return out;
 }
 

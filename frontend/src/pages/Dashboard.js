@@ -93,9 +93,9 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
           </div>
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             <Pill label="Wallet" value={diag.walletAddress ? `${diag.walletAddress.slice(0,8)}...` : 'None'} ok={!!diag.walletAddress} />
-            <Pill label="ETH" value={diag.ethBalanceEth ? `${diag.ethBalanceEth} ETH` : '—'} ok={parseFloat(diag.ethBalanceEth || 0) > 0} />
-            <Pill label="WETH" value={diag.wethBalanceEth ? `${diag.wethBalanceEth} WETH` : '—'} ok={true} />
-            <Pill label="Seaport approval" value={diag.seaportAllowance || '—'} ok={diag.seaportAllowance === 'unlimited'} />
+            <Pill label="ETH (gas)" value={diag.ethBalanceEth ? `${diag.ethBalanceEth} ETH` : '—'} ok={parseFloat(diag.ethBalanceEth || 0) >= 0.02} warn={parseFloat(diag.ethBalanceEth || 0) > 0 && parseFloat(diag.ethBalanceEth || 0) < 0.02} />
+            <Pill label="WETH (auto-wrapped)" value={diag.wethBalanceEth != null ? `${diag.wethBalanceEth} WETH` : '—'} neutral />
+            <Pill label="Seaport approval" value={diag.seaportAllowance || '—'} ok={diag.seaportAllowance === 'unlimited'} neutral={diag.seaportAllowance !== 'unlimited'} />
             <Pill label="RPC" value={diag.rpcConnected ? 'Connected' : 'Error'} ok={diag.rpcConnected} />
             <Pill label="API Key" value={diag.apiKeyValid ? 'Valid' : 'Invalid'} ok={diag.apiKeyValid} />
           </div>
@@ -203,11 +203,12 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
   );
 }
 
-function Pill({ label, value, ok }) {
+function Pill({ label, value, ok, warn, neutral }) {
+  const color = neutral ? '#64748b' : warn ? '#f59e0b' : ok ? '#22c55e' : '#f87171';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <span style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</span>
-      <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: ok ? '#22c55e' : '#f87171', fontWeight: 600 }}>{value}</span>
+      <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color, fontWeight: 600 }}>{value}</span>
     </div>
   );
 }
