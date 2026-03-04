@@ -10,6 +10,7 @@ export default function Bids({ bids, setBids }) {
   const [chain, setChain] = useState('ethereum');
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState({});
+  const [filling, setFilling] = useState({});
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState(null);
@@ -59,6 +60,19 @@ export default function Bids({ bids, setBids }) {
       alert(`Cancel failed: ${err.response?.data?.error || err.message}`);
     }
     setCancelling((p) => ({ ...p, [bid.orderHash]: false }));
+  };
+
+  const handleFill = async (bid) => {
+    if (!bid.orderHash) return alert('No order hash');
+    if (!window.confirm(`Mark bid on "${bid.collectionSlug}" as filled? This records it as a completed buy and removes it from active bids.`)) return;
+    setFilling((p) => ({ ...p, [bid.orderHash]: true }));
+    try {
+      await bidsApi.fill(bid.orderHash);
+      setBids?.((prev) => prev.filter((b) => b.orderHash !== bid.orderHash));
+    } catch (err) {
+      alert(`Failed: ${err.response?.data?.error || err.message}`);
+    }
+    setFilling((p) => ({ ...p, [bid.orderHash]: false }));
   };
 
   return (
@@ -193,13 +207,23 @@ export default function Bids({ bids, setBids }) {
                   )}
                 </div>
               </div>
-              <button
-                style={styles.btnCancel}
-                onClick={() => handleCancel(bid)}
-                disabled={cancelling[bid.orderHash]}
-              >
-                {cancelling[bid.orderHash] ? '...' : 'Cancel'}
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  style={styles.btnFill}
+                  onClick={() => handleFill(bid)}
+                  disabled={filling[bid.orderHash]}
+                  title="Bid was accepted — mark as filled and move to trade history"
+                >
+                  {filling[bid.orderHash] ? '...' : '✓ Filled'}
+                </button>
+                <button
+                  style={styles.btnCancel}
+                  onClick={() => handleCancel(bid)}
+                  disabled={cancelling[bid.orderHash]}
+                >
+                  {cancelling[bid.orderHash] ? '...' : 'Cancel'}
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -239,6 +263,7 @@ const styles = {
   bidSlug: { fontWeight: 600, fontSize: 15 },
   bidMeta: { display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' },
   hash: { fontSize: 11, color: '#334155' },
+  btnFill: { padding: '7px 16px', borderRadius: 8, border: '1px solid #22c55e', background: 'transparent', color: '#22c55e', fontWeight: 600, fontSize: 13, cursor: 'pointer' },
   btnCancel: { padding: '7px 16px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#ef4444', fontWeight: 600, fontSize: 13 },
   chainRow: { display: 'flex', gap: 8 },
   chainBtn: { flex: 1, padding: '9px 0', borderRadius: 9, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontWeight: 600, fontSize: 13, cursor: 'pointer' },

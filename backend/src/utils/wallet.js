@@ -177,6 +177,18 @@ async function getBalance() {
   }
 }
 
+async function getBalanceForChain(chain) {
+  const wallet = getWalletForChain(chain);
+  if (!wallet) return null;
+  try {
+    const raw = await wallet.provider.getBalance(wallet.address);
+    return parseFloat(ethers.formatEther(raw));
+  } catch (err) {
+    logger.error(`Failed to fetch ${chain} balance: ${err.message}`);
+    return null;
+  }
+}
+
 async function getWalletInfo() {
   const address = getWalletAddress();
   if (!address) return { connected: false };
@@ -213,6 +225,7 @@ module.exports = {
   getWalletForChain,
   getWalletAddress,
   getBalance,
+  getBalanceForChain,
   getWalletInfo,
   isConnected,
 };

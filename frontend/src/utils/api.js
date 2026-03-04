@@ -16,6 +16,7 @@ api.interceptors.request.use((config) => {
 
 export const walletApi = {
   getInfo: () => api.get('/wallet').then((r) => r.data),
+  getBalance: (chain = 'ethereum') => api.get('/wallet/balance', { params: { chain } }).then((r) => r.data),
   importPrivateKey: (privateKey) => api.post('/wallet/import/privatekey', { privateKey }).then((r) => r.data),
   importMnemonic: (mnemonic, derivationPath) => api.post('/wallet/import/mnemonic', { mnemonic, derivationPath }).then((r) => r.data),
   createNew: () => api.post('/wallet/create').then((r) => r.data),
@@ -65,6 +66,7 @@ export const bidsApi = {
   place: (collectionSlug, offerAmountEth, expirationHours = 24, chain = 'ethereum') =>
     api.post('/bids/place', { collectionSlug, offerAmountEth, expirationHours, chain }).then((r) => r.data),
   cancel: (orderHash, chain = 'ethereum') => api.delete(`/bids/${orderHash}?chain=${chain}`).then((r) => r.data),
+  fill: (orderHash) => api.post(`/bids/${orderHash}/fill`).then((r) => r.data),
 };
 
 export const approvalsApi = {

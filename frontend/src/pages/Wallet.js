@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { walletApi } from '../utils/api';
 
 export default function Wallet({ walletInfo }) {
@@ -10,6 +10,22 @@ export default function Wallet({ walletInfo }) {
   const [newWallet, setNewWallet] = useState(null);
   const [showKey, setShowKey] = useState(false);
   const [forgetting, setForgetting] = useState(false);
+  const [balChain, setBalChain] = useState('ethereum');
+  const [altBalance, setAltBalance] = useState(null);
+  const [altBalLoading, setAltBalLoading] = useState(false);
+
+  const switchBalChain = useCallback(async (chain) => {
+    setBalChain(chain);
+    if (chain === 'ethereum') { setAltBalance(null); return; }
+    setAltBalLoading(true);
+    try {
+      const { balanceEth } = await walletApi.getBalance(chain);
+      setAltBalance(balanceEth);
+    } catch {
+      setAltBalance(null);
+    }
+    setAltBalLoading(false);
+  }, []);
 
   const handleForget = async () => {
     if (!window.confirm('Remove saved wallet from server? You will need to re-import to trade again.')) return;
@@ -79,7 +95,22 @@ export default function Wallet({ walletInfo }) {
           </div>
           <div style={styles.balRow}>
             <span style={styles.balLabel}>Balance</span>
-            <span style={styles.bal} className="mono">{walletInfo.balanceEth?.toFixed(6)} ETH</span>
+            <span style={styles.bal} className="mono">
+              {balChain === 'ethereum'
+                ? `${walletInfo.balanceEth?.toFixed(6) ?? '—'} ETH`
+                : altBalLoading ? 'Loading…' : `${altBalance?.toFixed(6) ?? '—'} ETH`}
+            </span>
+            <div style={styles.chainToggle}>
+              {['ethereum', 'base'].map((c) => (
+                <button
+                  key={c}
+                  style={{ ...styles.chainToggleBtn, ...(balChain === c ? styles.chainToggleBtnActive : {}) }}
+                  onClick={() => switchBalChain(c)}
+                >
+                  {c === 'ethereum' ? '⬡ ETH' : '🔵 Base'}
+                </button>
+              ))}
+            </div>
           </div>
           <div style={styles.balRow}>
             <span style={styles.balLabel}>Saved</span>
@@ -235,9 +266,12 @@ const styles = {
   connectedTitle: { color: '#22c55e', fontWeight: 700, fontSize: 15 },
   addrRow: { display: 'flex', alignItems: 'center', gap: 8 },
   addr: { fontSize: 13, color: '#f1f5f9', wordBreak: 'break-all' },
-  balRow: { display: 'flex', alignItems: 'center', gap: 10 },
+  balRow: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   balLabel: { fontSize: 12, color: '#64748b' },
   bal: { fontSize: 18, fontWeight: 700, color: '#22c55e' },
+  chainToggle: { display: 'flex', gap: 4, marginLeft: 'auto' },
+  chainToggleBtn: { padding: '3px 10px', borderRadius: 6, border: '1px solid #334155', background: 'transparent', color: '#64748b', fontSize: 11, fontWeight: 600, cursor: 'pointer' },
+  chainToggleBtnActive: { border: '1px solid #22c55e', color: '#22c55e', background: 'rgba(34,197,94,0.08)' },
   reimportWarn: { background: 'rgba(234,179,8,0.1)', borderRadius: 8, padding: '8px 12px', color: '#eab308', fontSize: 12 },
   btnForget: { padding: '6px 14px', borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', fontSize: 12, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' },
   newWalletBox: { background: 'rgba(239,68,68,0.08)', border: '2px solid rgba(239,68,68,0.3)', borderRadius: 12, padding: 20, display: 'flex', flexDirection: 'column', gap: 10 },

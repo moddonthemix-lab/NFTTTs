@@ -134,6 +134,16 @@ app.get('/api/wallet', async (req, res) => {
   }
 });
 
+app.get('/api/wallet/balance', async (req, res) => {
+  try {
+    const chain = req.query.chain || 'ethereum';
+    const balanceEth = await walletUtils.getBalanceForChain(chain);
+    res.json({ chain, balanceEth });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/wallet/import/privatekey', async (req, res) => {
   try {
     const { privateKey } = req.body;
@@ -321,6 +331,21 @@ app.delete('/api/bids/:orderHash', async (req, res) => {
   try {
     const chain = req.query.chain || 'ethereum';
     await cancelOrder(req.params.orderHash, chain);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/bids/:orderHash/fill', (req, res) => {
+  try {
+    const { orderHash } = req.params;
+    const bids = db.getBids();
+    const bid = bids.find((b) => b.orderHash === orderHash);
+    if (!bid) return res.status(404).json({ error: 'Bid not found' });
+    db.removeBidByOrderHash(orderHash);
+    db.addTrade({ type: 'buy', collectionSlug: bid.collectionSlug, priceEth: bid.offerAmountEth, source: 'bid_fill', orderHash });
+    io.emit('trade:bid_filled', { collectionSlug: bid.collectionSlug, offerAmountEth: bid.offerAmountEth, orderHash });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
