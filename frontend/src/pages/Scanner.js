@@ -108,6 +108,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
   const [bidModal, setBidModal] = useState(null);
   const [bidAmount, setBidAmount] = useState('');
   const [bidHours, setBidHours] = useState(24);
+  const [bidChain, setBidChain] = useState('ethereum');
   const [actionLoading, setActionLoading] = useState(null);
 
   const [expandedCollections, setExpandedCollections] = useState(new Set());
@@ -231,14 +232,15 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
   const handleBidOpen = (opp) => {
     setBidModal(opp);
     setBidAmount((opp.floorPriceEth * 0.85).toFixed(4));
+    setBidChain(opp.chain || 'ethereum');
   };
 
   const handleBidSubmit = async () => {
     if (!bidModal || !bidAmount) return;
     setActionLoading(bidModal.id);
     try {
-      await bidsApi.place(bidModal.collectionSlug, parseFloat(bidAmount), parseInt(bidHours));
-      alert(`Bid placed on ${bidModal.collectionSlug}!`);
+      await bidsApi.place(bidModal.collectionSlug, parseFloat(bidAmount), parseInt(bidHours), bidChain);
+      alert(`Bid placed on ${bidModal.collectionSlug} (${bidChain})!`);
       setBidModal(null);
     } catch (err) {
       alert(`Bid failed: ${err.message}`);
@@ -587,7 +589,8 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={styles.modalTitle}>Place Bid — {bidModal.collectionName}</h2>
             <div style={styles.modalInfo}>
-              Floor: <b>{bidModal.floorPriceEth?.toFixed(4)} ETH</b>
+              <b>Collection offer</b> on <b>{bidChain}</b> · Floor: <b>{bidModal.floorPriceEth?.toFixed(4)} ETH</b>
+              <div style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>Any holder of this collection can accept. Token #{bidModal.tokenId} shown in scanner but bid covers the whole collection.</div>
             </div>
             <label style={styles.label}>Bid Amount (ETH)</label>
             <input
