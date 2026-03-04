@@ -14,7 +14,7 @@ const { scanForOpportunities, scanCollection, setEmitter: setScanEmitter } = req
 const openSeaApi = require('./scanner/openSeaApi');
 const { getEthPriceUsd } = openSeaApi;
 const botEngine = require('./trader/botEngine');
-const { buyNFT, placeBid, sellNFT, cancelOrder } = require('./trader/seaportTrader');
+const { buyNFT, placeBid, sellNFT, cancelOrder, getDiagnostics } = require('./trader/seaportTrader');
 const { weiToEth } = require('./analyzer/scorer');
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -203,6 +203,15 @@ app.post('/api/bot/scan', async (req, res) => {
   try {
     const opportunities = await scanForOpportunities();
     res.json({ count: opportunities.length, opportunities });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/bot/diagnostics', async (req, res) => {
+  try {
+    const result = await getDiagnostics();
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

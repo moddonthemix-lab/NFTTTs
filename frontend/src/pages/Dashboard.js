@@ -12,6 +12,8 @@ const fmtUsd = (eth, price) => {
 
 export default function Dashboard({ walletInfo, botRunning, stats, trades, portfolio, pendingApprovals, scanning, ethPrice }) {
   const [starting, setStarting] = React.useState(false);
+  const [diag, setDiag] = React.useState(null);
+  const [diagLoading, setDiagLoading] = React.useState(false);
 
   const handleToggleBot = async () => {
     setStarting(true);
@@ -30,6 +32,17 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
     } catch (err) {
       alert(err.message);
     }
+  };
+
+  const handleDiagnostics = async () => {
+    setDiagLoading(true);
+    try {
+      const result = await botApi.diagnostics();
+      setDiag(result);
+    } catch (err) {
+      setDiag({ errors: [err.message], ready: false });
+    }
+    setDiagLoading(false);
   };
 
   // Build profit chart from trades
@@ -53,6 +66,9 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
           <p style={styles.sub}>NFT flip bot status & performance</p>
         </div>
         <div style={styles.btns}>
+          <button style={styles.btnDiag} onClick={handleDiagnostics} disabled={diagLoading}>
+            {diagLoading ? '...' : '⚙ Check Setup'}
+          </button>
           <button style={styles.btnScan} onClick={handleScanNow} disabled={scanning}>
             {scanning ? '⟳ Scanning...' : '⊕ Scan Now'}
           </button>
@@ -65,6 +81,33 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
           </button>
         </div>
       </div>
+
+      {/* Diagnostics panel */}
+      {diag && (
+        <div style={{ ...styles.walletStrip, flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', justifyContent: 'space-between' }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>
+              {diag.ready ? '✓ Setup looks good — ready to trade' : '⚠ Setup issues detected'}
+            </span>
+            <button style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 16 }} onClick={() => setDiag(null)}>✕</button>
+          </div>
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+            <Pill label="Wallet" value={diag.walletAddress ? `${diag.walletAddress.slice(0,8)}...` : 'None'} ok={!!diag.walletAddress} />
+            <Pill label="ETH" value={diag.ethBalanceEth ? `${diag.ethBalanceEth} ETH` : '—'} ok={parseFloat(diag.ethBalanceEth || 0) > 0} />
+            <Pill label="WETH" value={diag.wethBalanceEth ? `${diag.wethBalanceEth} WETH` : '—'} ok={true} />
+            <Pill label="Seaport approval" value={diag.seaportAllowance || '—'} ok={diag.seaportAllowance === 'unlimited'} />
+            <Pill label="RPC" value={diag.rpcConnected ? 'Connected' : 'Error'} ok={diag.rpcConnected} />
+            <Pill label="API Key" value={diag.apiKeyValid ? 'Valid' : 'Invalid'} ok={diag.apiKeyValid} />
+          </div>
+          {diag.errors?.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {diag.errors.map((e, i) => (
+                <div key={i} style={{ color: '#f87171', fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{e}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Wallet strip */}
       {walletInfo?.connected ? (
@@ -160,6 +203,15 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
   );
 }
 
+function Pill({ label, value, ok }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</span>
+      <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: ok ? '#22c55e' : '#f87171', fontWeight: 600 }}>{value}</span>
+    </div>
+  );
+}
+
 const styles = {
   page: { padding: 28, maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 },
   titleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 },
@@ -168,6 +220,7 @@ const styles = {
   btns: { display: 'flex', gap: 10 },
   btnBot: { padding: '9px 18px', borderRadius: 9, border: 'none', color: '#fff', fontWeight: 700, fontSize: 14 },
   btnScan: { padding: '9px 18px', borderRadius: 9, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontWeight: 600, fontSize: 14 },
+  btnDiag: { padding: '9px 18px', borderRadius: 9, border: '1px solid #334155', background: 'transparent', color: '#818cf8', fontWeight: 600, fontSize: 14 },
   walletStrip: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
   walletAddr: { fontSize: 13, color: '#818cf8' },
   walletBal: { fontSize: 15, fontWeight: 700, color: '#22c55e' },

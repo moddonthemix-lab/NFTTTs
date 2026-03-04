@@ -31,6 +31,7 @@ export const botApi = {
   stop: () => api.post('/bot/stop').then((r) => r.data),
   status: () => api.get('/bot/status').then((r) => r.data),
   scan: () => api.post('/bot/scan').then((r) => r.data),
+  diagnostics: () => api.get('/bot/diagnostics').then((r) => r.data),
 };
 
 export const scannerApi = {
