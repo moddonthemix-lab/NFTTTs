@@ -172,19 +172,24 @@ async function buyNFT(listing) {
 
 // ─── Bid (collection offer) ───────────────────────────────────────────────────
 
+// OpenSea conduit key — same on all chains
+const OS_CONDUIT_KEY = '0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000';
+
+const SEAPORT_ABI = [
+  'function getCounter(address offerer) view returns (uint256)',
+];
+
 /**
  * Place a collection offer on OpenSea using Seaport v1.6.
  *
  * Flow:
  *  1. Wrap ETH -> WETH if balance insufficient (on-chain, costs gas)
  *  2. Approve Seaport to spend WETH — one-time per wallet (on-chain, costs gas)
- *  3. POST /offers/build  -> OpenSea returns order parameters
- *  4. Sign with hardcoded Seaport EIP-712 types (no gas — just signing)
- *  5. POST /offers with signed parameters -> bid is live on OpenSea
- *
- * NOTE: OpenSea's /offers/build response contains `partial_order.parameters`
- * but does NOT include EIP-712 types or a `value` field — those are hardcoded
- * above as SEAPORT_ORDER_TYPES.
+ *  3. POST /offers/build  -> OpenSea returns partialParameters (zone, zoneHash,
+ *     consideration criteria) + encodedTokenIds
+ *  4. Fetch offerer counter from Seaport contract (view call, no gas)
+ *  5. Assemble full Seaport OrderComponents and sign with EIP-712
+ *  6. POST /offers with signed order -> bid is live on OpenSea
  */
 async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, chain = 'ethereum') {
   const wallet = walletUtils.getWalletForChain(chain);
@@ -198,71 +203,75 @@ async function placeBid(collectionSlug, offerAmountEth, expirationHours = 24, ch
   await ensureWETH(wallet, offerAmountWei, chain);
   await approveWETH(wallet, offerAmountWei, chain);
 
-  const expiration = Math.floor(Date.now() / 1000) + expirationHours * 3600;
+  const now        = Math.floor(Date.now() / 1000);
+  const expiration = now + expirationHours * 3600;
 
-  const buildPayload = {
-    criteria: { collection: { slug: collectionSlug } },
-    protocol_address: seaportAddress,
-    quantity: 1,
-    offer_protected: false,
-    offerer: wallet.address,
-    // Tell OpenSea the WETH amount — recipient omitted (not needed in build request)
-    consideration: [
-      {
-        item_type: 1,
-        token: wethAddress,
-        identifier_or_criteria: '0',
-        start_amount: offerAmountWei.toString(),
-        end_amount: offerAmountWei.toString(),
-      },
-    ],
-    expiration_time: expiration.toString(),
-  };
-
+  // Step 1: ask OpenSea for the zone / criteria consideration for this collection
   logger.info('Calling /offers/build...');
   const buildRes = await axios.post(
     `${config.opensea.apiBase}/offers/build`,
-    buildPayload,
+    {
+      criteria:         { collection: { slug: collectionSlug } },
+      protocol_address: seaportAddress,
+      quantity:         1,
+      offer_protected:  false,
+      offerer:          wallet.address,
+    },
     { headers: osHeaders() }
   );
 
-  const partialOrder = buildRes.data?.partial_order;
-  if (!partialOrder?.parameters) {
-    throw new Error(`/offers/build missing parameters. Got: ${JSON.stringify(buildRes.data)}`);
+  // OpenSea v2 returns { partialParameters: { zone, zoneHash, consideration }, encodedTokenIds }
+  const partial = buildRes.data?.partialParameters;
+  if (!partial?.zone || !Array.isArray(partial?.consideration)) {
+    throw new Error(`/offers/build unexpected response: ${JSON.stringify(buildRes.data)}`);
   }
+  const encodedTokenIds = buildRes.data?.encodedTokenIds ?? '';
+  logger.info(`Got partial params: zone=${partial.zone}, ${partial.consideration.length} consideration item(s)`);
 
-  const params = partialOrder.parameters;
+  // Step 2: fetch offerer's current Seaport counter (needed for EIP-712 signature)
+  const seaport = new ethers.Contract(seaportAddress, SEAPORT_ABI, wallet.provider);
+  const counter = await seaport.getCounter(wallet.address);
+  logger.info(`Seaport counter: ${counter}`);
 
-  // OpenSea may return a template with a zero or stale WETH amount.
-  // Always force the offer[0] amounts to exactly what was requested.
-  if (params.offer?.[0]) {
-    params.offer[0].startAmount = offerAmountWei.toString();
-    params.offer[0].endAmount   = offerAmountWei.toString();
-    params.offer[0].token       = wethAddress; // ensure correct WETH for this chain
-  } else {
-    throw new Error(`/offers/build returned no offer items in parameters. Got: ${JSON.stringify(params)}`);
-  }
+  // Step 3: assemble the full Seaport OrderComponents
+  const salt   = ethers.toBigInt(ethers.randomBytes(32)).toString();
+  const params = {
+    offerer:    wallet.address,
+    zone:       partial.zone,
+    offer: [
+      {
+        itemType:             1,   // ERC20
+        token:                wethAddress,
+        identifierOrCriteria: '0',
+        startAmount:          offerAmountWei.toString(),
+        endAmount:            offerAmountWei.toString(),
+      },
+    ],
+    consideration:                    partial.consideration,
+    orderType:                        2,   // FULL_RESTRICTED
+    startTime:                        now.toString(),
+    endTime:                          expiration.toString(),
+    zoneHash:                         partial.zoneHash,
+    salt,
+    conduitKey:                       OS_CONDUIT_KEY,
+    totalOriginalConsiderationItems:  partial.consideration.length,
+    counter:                          counter.toString(),
+  };
 
-  logger.info(`Signing: ${ethers.formatEther(offerAmountWei)} WETH offer, ${params.consideration?.length || 0} consideration items`);
-  logger.info(`Offerer: ${params.offerer} | Counter: ${params.counter} | Zone: ${params.zone}`);
+  logger.info(`Signing: ${ethers.formatEther(offerAmountWei)} WETH, counter=${counter}, endTime=${expiration}`);
 
-  const signature = await wallet.signTypedData(
-    seaportDomain(chain),
-    SEAPORT_ORDER_TYPES,
-    params
-  );
+  const signature = await wallet.signTypedData(seaportDomain(chain), SEAPORT_ORDER_TYPES, params);
   logger.info(`Signed: ${signature.slice(0, 22)}...`);
 
+  // Step 4: submit to OpenSea
   logger.info('Submitting to /offers...');
   const submitRes = await axios.post(
     `${config.opensea.apiBase}/offers`,
     {
-      criteria: { collection: { slug: collectionSlug } },
-      protocol_address: seaportAddress,
-      protocol_data: {
-        parameters: params,
-        signature,
-      },
+      criteria:          { collection: { slug: collectionSlug } },
+      encoded_token_ids: encodedTokenIds,
+      protocol_address:  seaportAddress,
+      protocol_data:     { parameters: params, signature },
     },
     { headers: osHeaders() }
   );
