@@ -104,6 +104,8 @@ async function scanForOpportunities() {
         if (chain !== 'base' && floorPrice > config.scanner.maxFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
         logger.info(`${slug} [${chain}]${isWatchlisted ? ' [watchlist]' : ''}: floor=${floorPrice} ETH, vol=${oneDayVolume.toFixed(2)} ETH — scanning ${listings.length} listings`);
 
+        // Deduplicate by tokenId — keep only the cheapest listing per token
+        const seenTokens = new Map();
         for (const listing of listings) {
           const listingPriceEth = weiToEth(
             listing.price?.current?.value,
@@ -118,7 +120,6 @@ async function scanForOpportunities() {
           const score = scoreOpportunity(listing, stats);
           const flipEstimate = estimateFlip(listingPriceEth, avgSalePrice);
 
-          // Base scores naturally lower (less volume/sales data) — use a lower threshold
           if (score < (chain === 'base' ? 1 : 10)) continue;
 
           const tokenId = listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria
@@ -129,7 +130,7 @@ async function scanForOpportunities() {
             || col.contracts?.[0]?.address
             || '';
 
-          opportunities.push({
+          const opp = {
             id: listing.order_hash || `${slug}_${tokenId}`,
             collectionSlug: slug,
             collectionName: col.name || slug,
@@ -151,7 +152,16 @@ async function scanForOpportunities() {
             isWatchlisted,
             listing,
             scannedAt: new Date().toISOString(),
-          });
+          };
+
+          const existing = seenTokens.get(tokenId);
+          if (!existing || listingPriceEth < existing.listingPriceEth) {
+            seenTokens.set(tokenId, opp);
+          }
+        }
+
+        for (const opp of seenTokens.values()) {
+          opportunities.push(opp);
         }
       } catch (err) {
         logger.warn(`Error scanning collection ${slug}: ${err.message}`);
@@ -192,7 +202,7 @@ async function scanCollection(slug, chain = 'ethereum') {
     const avgSalePrice = oneDayInt.average_price || sevenDayInt.average_price || floorPrice;
     const liquidity = liquidityScore(stats);
 
-    const mapped = listings
+    const rawMapped = listings
       .map((listing) => {
         const priceEth = weiToEth(listing.price?.current?.value, listing.price?.current?.decimals);
         const score = scoreOpportunity(listing, stats);
@@ -201,8 +211,16 @@ async function scanCollection(slug, chain = 'ethereum') {
         const tokenId = listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria || '';
         return { listing, priceEth, score, dealGrade: dealGrade(score), flipEstimate, contractAddress, tokenId };
       })
-      .filter((r) => r.priceEth > 0)
-      .sort((a, b) => b.score - a.score);
+      .filter((r) => r.priceEth > 0);
+
+    // Deduplicate by tokenId — keep cheapest listing per token
+    const tokenMap = new Map();
+    for (const r of rawMapped) {
+      const key = r.tokenId || r.listing.order_hash;
+      const existing = tokenMap.get(key);
+      if (!existing || r.priceEth < existing.priceEth) tokenMap.set(key, r);
+    }
+    const mapped = Array.from(tokenMap.values()).sort((a, b) => b.score - a.score);
 
     // Fetch actual NFT image + rarity for top 20 (one API call each — images load progressively)
     const toEnrich = mapped.slice(0, 20);
