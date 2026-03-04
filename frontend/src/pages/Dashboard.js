@@ -93,7 +93,7 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
           </div>
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             <Pill label="Wallet" value={diag.walletAddress ? `${diag.walletAddress.slice(0,8)}...` : 'None'} ok={!!diag.walletAddress} />
-            <Pill label="ETH (gas)" value={diag.ethBalanceEth ? `${diag.ethBalanceEth} ETH` : '—'} ok={parseFloat(diag.ethBalanceEth || 0) >= 0.02} warn={parseFloat(diag.ethBalanceEth || 0) > 0 && parseFloat(diag.ethBalanceEth || 0) < 0.02} />
+            <Pill label="ETH (gas)" value={diag.ethBalanceEth ? `${diag.ethBalanceEth} ETH` : '—'} ok={parseFloat(diag.ethBalanceEth || 0) >= 0.001} warn={parseFloat(diag.ethBalanceEth || 0) > 0 && parseFloat(diag.ethBalanceEth || 0) < 0.001} />
             <Pill label="WETH (auto-wrapped)" value={diag.wethBalanceEth != null ? `${diag.wethBalanceEth} WETH` : '—'} neutral />
             <Pill label="Seaport approval" value={diag.seaportAllowance || '—'} ok={diag.seaportAllowance === 'unlimited'} neutral={diag.seaportAllowance !== 'unlimited'} />
             <Pill label="RPC" value={diag.rpcConnected ? 'Connected' : 'Error'} ok={diag.rpcConnected} />

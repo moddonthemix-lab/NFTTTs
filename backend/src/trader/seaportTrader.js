@@ -351,7 +351,7 @@ async function getDiagnostics() {
 
   out.walletAddress = wallet.address;
 
-  const MIN_ETH_FOR_GAS = 0.02; // WETH wrap + Seaport approval cost ~$5-15 in gas
+  const MIN_ETH_FOR_GAS = 0.001; // gas is cheap right now, especially on Base
 
   try {
     const ethBal = await wallet.provider.getBalance(wallet.address);
@@ -360,7 +360,7 @@ async function getDiagnostics() {
 
     if (parseFloat(out.ethBalanceEth) < MIN_ETH_FOR_GAS) {
       out.errors.push(
-        `ETH balance too low (${out.ethBalanceEth} ETH). Need at least ${MIN_ETH_FOR_GAS} ETH for gas (WETH wrap + Seaport approval). Add ETH to ${wallet.address}`
+        `ETH balance too low (${out.ethBalanceEth} ETH). Need at least ${MIN_ETH_FOR_GAS} ETH for gas. Add ETH to ${wallet.address}`
       );
     }
 
