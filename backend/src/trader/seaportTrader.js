@@ -176,9 +176,24 @@ async function buyNFT(listing) {
 
   logger.info(`Fulfillment tx: to=${txParams.to}, value=${txParams.value}, gas=${txParams.gas}`);
 
+  // OpenSea sometimes returns decoded parameters instead of raw hex calldata.
+  // When input_data is an object we must ABI-encode it as fulfillBasicOrder ourselves.
+  let calldata;
+  if (typeof txParams.input_data === 'string') {
+    calldata = txParams.input_data;
+  } else if (txParams.input_data?.parameters) {
+    const iface = new ethers.Interface([
+      'function fulfillBasicOrder((address considerationToken, uint256 considerationIdentifier, uint256 considerationAmount, address offerer, address zone, address offerToken, uint256 offerIdentifier, uint256 offerAmount, uint8 basicOrderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 offererConduitKey, bytes32 fulfillerConduitKey, uint256 totalOriginalAdditionalRecipients, (uint256 amount, address recipient)[] additionalRecipients, bytes signature) parameters) payable returns (bool)',
+    ]);
+    calldata = iface.encodeFunctionData('fulfillBasicOrder', [txParams.input_data.parameters]);
+    logger.info('Encoded fulfillBasicOrder calldata from decoded parameters');
+  } else {
+    throw new Error(`Unsupported input_data format: ${JSON.stringify(txParams.input_data).slice(0, 200)}`);
+  }
+
   const tx = await wallet.sendTransaction({
     to: txParams.to,
-    data: txParams.input_data,
+    data: calldata,
     value: BigInt(txParams.value || '0'),
     gasLimit: BigInt(txParams.gas || '300000'),
   });
