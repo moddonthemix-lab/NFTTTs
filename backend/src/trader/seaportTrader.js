@@ -372,6 +372,8 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72,
   const counter = await seaport.getCounter(wallet.address);
 
   const priceWei = ethers.parseEther(priceEth.toString());
+  const feeWei   = priceWei * OS_FEE_BASIS_PTS / 10000n;   // 1% to OpenSea
+  const sellerWei = priceWei - feeWei;
   const now = Math.floor(Date.now() / 1000);
   // salt must be a valid uint256 decimal string
   const salt = BigInt(ethers.hexlify(ethers.randomBytes(16))).toString();
@@ -390,12 +392,20 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72,
     ],
     consideration: [
       {
-        itemType: 0,                                 // native ETH
+        itemType: 0,                                 // native ETH — seller proceeds
         token: ethers.ZeroAddress,
         identifierOrCriteria: '0',
-        startAmount: priceWei.toString(),
-        endAmount: priceWei.toString(),
+        startAmount: sellerWei.toString(),
+        endAmount: sellerWei.toString(),
         recipient: wallet.address,
+      },
+      {
+        itemType: 0,                                 // native ETH — OpenSea 1% fee
+        token: ethers.ZeroAddress,
+        identifierOrCriteria: '0',
+        startAmount: feeWei.toString(),
+        endAmount: feeWei.toString(),
+        recipient: OS_FEE_RECIPIENT,
       },
     ],
     orderType: 0,                                    // FULL_OPEN
@@ -405,7 +415,7 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72,
     salt,
     conduitKey: OS_CONDUIT_KEY,
     counter: counter.toString(),
-    totalOriginalConsiderationItems: 1,
+    totalOriginalConsiderationItems: 2,
   };
 
   // 2. Sign order with EIP-712 (SEAPORT_ORDER_TYPES excludes totalOriginalConsiderationItems)
