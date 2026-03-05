@@ -97,6 +97,23 @@ export function useSocket() {
       if (d.portfolioEntry) setPortfolio((prev) => [...prev, d.portfolioEntry]);
       if (d.orderHash) setBids((prev) => prev.filter((b) => b.orderHash !== d.orderHash));
     });
+    socket.on('trade:list', (d) => {
+      addLog('info', `Listed: ${d.collectionSlug || ''} #${d.tokenId} for ${d.priceEth} ETH`);
+      setTrades((prev) => [{
+        type: 'list',
+        contractAddress: d.contractAddress,
+        tokenId: d.tokenId,
+        collectionSlug: d.collectionSlug,
+        priceEth: d.priceEth,
+        orderHash: d.orderHash,
+        timestamp: new Date().toISOString(),
+      }, ...prev]);
+      setPortfolio((prev) => prev.map((n) =>
+        n.contractAddress?.toLowerCase() === d.contractAddress?.toLowerCase() && n.tokenId === d.tokenId
+          ? { ...n, listed: true, listingPriceEth: d.priceEth, listingOrderHash: d.orderHash }
+          : n
+      ));
+    });
 
     // Wallet
     socket.on('wallet:connected', (d) => {

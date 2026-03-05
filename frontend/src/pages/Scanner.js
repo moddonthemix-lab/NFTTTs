@@ -80,14 +80,14 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
   const [sweepResult, setSweepResult] = useState(null);
 
   const handleSnipe = async (slug, name) => {
-    if (!window.confirm(`Snipe floor of ${name}? This will immediately buy the cheapest listing.`)) return;
+    if (!window.confirm(`FP Buy ${name}? This will immediately buy the cheapest listing at floor price.`)) return;
     try {
       const result = await tradesApi.snipe(slug);
       const eth = result.priceEth ?? 0;
       const priceStr = eth < 0.0001 ? eth.toFixed(8) : eth.toFixed(4);
-      alert(`Sniped! Paid ${priceStr} ETH. TX: ${result.txHash}`);
+      alert(`FP Buy successful! Paid ${priceStr} ETH. TX: ${result.txHash}`);
     } catch (err) {
-      alert(`Snipe failed: ${err.message}`);
+      alert(`FP Buy failed: ${err.message}`);
     }
   };
 
@@ -342,7 +342,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
               <div style={styles.dsTitleRow}>
                 <span style={styles.dsTitle}>{scannedResult.collection?.name} — Floor: {scannedResult.stats?.total?.floor_price?.toFixed(4)} ETH</span>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button style={styles.btnSnipe} onClick={() => handleSnipe(scannedResult.collection?.collection || searchSlug.trim(), scannedResult.collection?.name)}>⚡ Snipe</button>
+                  <button style={styles.btnSnipe} onClick={() => handleSnipe(scannedResult.collection?.collection || searchSlug.trim(), scannedResult.collection?.name)}>⚡ FP Buy</button>
                   <button style={styles.btnSweep} onClick={() => { setSweepModal({ slug: scannedResult.collection?.collection || searchSlug.trim(), name: scannedResult.collection?.name }); setSweepResult(null); setSweepCount(3); setSweepMaxPrice(''); }}>▣ Sweep</button>
                 </div>
               </div>
@@ -486,8 +486,8 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                   <button
                     style={styles.btnSnipe}
                     onClick={(e) => { e.stopPropagation(); handleSnipe(group.slug, group.name); }}
-                    title="Snipe floor — buy the single cheapest listing now"
-                  >⚡ Snipe</button>
+                    title="FP Buy — buy the single cheapest listing at floor price now"
+                  >⚡ FP Buy</button>
                   <button
                     style={styles.btnSweep}
                     onClick={(e) => { e.stopPropagation(); setSweepModal({ slug: group.slug, name: group.name }); setSweepResult(null); setSweepCount(3); setSweepMaxPrice(''); }}
