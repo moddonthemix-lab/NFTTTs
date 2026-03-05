@@ -413,15 +413,26 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72,
   const signature = await wallet.signTypedData(domain, SEAPORT_ORDER_TYPES, orderParameters);
 
   // 3. Submit directly to OpenSea v2 /listings (no /listings/build step needed)
-  const submitRes = await axios.post(
-    `${config.opensea.apiBase}/listings`,
-    {
-      parameters: orderParameters,
-      signature,
-      protocol_address: seaportAddress,
-    },
-    { headers: osHeaders() }
-  );
+  logger.info(`[${chain}] Submitting listing to OpenSea: counter=${counter}, salt=${salt}`);
+  let submitRes;
+  try {
+    submitRes = await axios.post(
+      `${config.opensea.apiBase}/listings`,
+      {
+        parameters: orderParameters,
+        signature,
+        protocol_address: seaportAddress,
+      },
+      { headers: osHeaders() }
+    );
+  } catch (axErr) {
+    const body = axErr.response?.data;
+    const status = axErr.response?.status;
+    logger.error(`[${chain}] OpenSea /listings error ${status}: ${JSON.stringify(body)}`);
+    throw new Error(
+      body ? `OpenSea error ${status}: ${JSON.stringify(body)}` : axErr.message
+    );
+  }
 
   if (submitRes.data?.errors?.length) {
     throw new Error(`OpenSea rejected listing: ${JSON.stringify(submitRes.data.errors)}`);
