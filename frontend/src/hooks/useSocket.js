@@ -126,6 +126,7 @@ export function useSocket() {
     walletInfo,
     botRunning,
     portfolio,
+    setPortfolio,
     trades,
     bids,
     setBids,

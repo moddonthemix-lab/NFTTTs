@@ -45,6 +45,7 @@ export const scannerApi = {
 
 export const portfolioApi = {
   get: () => api.get('/portfolio').then((r) => r.data),
+  sync: (chain = 'ethereum') => api.post('/portfolio/sync', { chain }).then((r) => r.data),
 };
 
 export const tradesApi = {

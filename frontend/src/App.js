@@ -23,6 +23,7 @@ function AppInner() {
     walletInfo,
     botRunning,
     portfolio,
+    setPortfolio,
     trades,
     bids,
     setBids,
@@ -74,7 +75,7 @@ function AppInner() {
             <Route path="/favorites" element={<Favorites />} />
             <Route
               path="/portfolio"
-              element={<Portfolio portfolio={portfolio} ethPrice={ethPrice} />}
+              element={<Portfolio portfolio={portfolio} setPortfolio={setPortfolio} ethPrice={ethPrice} />}
             />
             <Route
               path="/approvals"

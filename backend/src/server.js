@@ -303,6 +303,42 @@ app.get('/api/portfolio', (req, res) => {
   res.json(db.getPortfolio());
 });
 
+// Sync wallet NFTs into portfolio — fetches on-chain holdings and merges with DB
+app.post('/api/portfolio/sync', async (req, res) => {
+  try {
+    if (!walletUtils.isConnected()) return res.status(400).json({ error: 'Wallet not connected' });
+    const wallet = walletUtils.getWallet();
+    const chain = req.body?.chain || 'ethereum';
+    const { nfts } = await openSeaApi.getNFTsByOwner(wallet.address, 200, null, chain);
+    if (!nfts || !nfts.length) return res.json({ added: 0, portfolio: db.getPortfolio() });
+
+    const existing = db.getPortfolio();
+    const existingKeys = new Set(existing.map((n) => `${n.contractAddress?.toLowerCase()}-${n.tokenId}`));
+
+    let added = 0;
+    for (const nft of nfts) {
+      const key = `${nft.contract?.toLowerCase()}-${nft.identifier}`;
+      if (existingKeys.has(key)) continue;
+      db.addToPortfolio({
+        tokenId: nft.identifier,
+        contractAddress: nft.contract,
+        collectionSlug: nft.collection,
+        collectionName: nft.name || nft.collection,
+        collectionImage: nft.display_image_url || nft.image_url || null,
+        buyPriceEth: 0,
+        acquiredVia: 'wallet_sync',
+        chain,
+      });
+      existingKeys.add(key);
+      added++;
+    }
+
+    res.json({ added, portfolio: db.getPortfolio() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Trades ---
 app.get('/api/trades', (req, res) => {
   const limit = parseInt(req.query.limit) || 100;

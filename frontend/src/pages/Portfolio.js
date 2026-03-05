@@ -1,20 +1,33 @@
 import React, { useState, useCallback } from 'react';
-import { tradesApi, scannerApi } from '../utils/api';
+import { tradesApi, scannerApi, portfolioApi } from '../utils/api';
 import { format } from 'date-fns';
 
 const fmt = (n, d = 4) => (n != null ? Number(n).toFixed(d) : '—');
 
-export default function Portfolio({ portfolio, ethPrice }) {
-  const [action, setAction] = useState({});   // { [k]: 'list'|'offer' }
+export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
+  const [action, setAction] = useState({});  // { [k]: 'list'|'offer' }
   const [listPrice, setListPrice] = useState({});
   const [busy, setBusy] = useState({});
   const [bestOffers, setBestOffers] = useState({});  // { [k]: { priceEth, loading } }
   const [fees, setFees] = useState({});              // { [k]: { marketplaceFee, royaltyFee, loading } }
+  const [syncing, setSyncing] = useState(false);
 
   const fmtUsd = (eth) => {
     if (!ethPrice || eth == null) return null;
     const usd = eth * ethPrice;
     return usd >= 1000 ? `$${Math.round(usd).toLocaleString()}` : `$${usd.toFixed(2)}`;
+  };
+
+  const handleSync = async (chain = 'ethereum') => {
+    setSyncing(true);
+    try {
+      const { added, portfolio: updated } = await portfolioApi.sync(chain);
+      if (setPortfolio) setPortfolio(updated);
+      alert(added > 0 ? `Synced ${added} new NFT${added !== 1 ? 's' : ''} from wallet.` : 'Wallet synced — no new NFTs found.');
+    } catch (err) {
+      alert(`Sync failed: ${err.response?.data?.error || err.message}`);
+    }
+    setSyncing(false);
   };
 
   // Unique key per card — use contract+token when available, else index-based
@@ -122,6 +135,14 @@ export default function Portfolio({ portfolio, ethPrice }) {
             {(portfolio || []).length} NFTs held — cost: {fmt(totalCost)} ETH
             {ethPrice && totalCost > 0 && <span style={{ color: '#64748b' }}> ({fmtUsd(totalCost)})</span>}
           </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={styles.syncBtn} onClick={() => handleSync('ethereum')} disabled={syncing}>
+            {syncing ? 'Syncing...' : '⟳ Sync ETH Wallet'}
+          </button>
+          <button style={styles.syncBtn} onClick={() => handleSync('base')} disabled={syncing}>
+            {syncing ? '' : '⟳ Sync Base Wallet'}
+          </button>
         </div>
       </div>
 
@@ -354,4 +375,5 @@ const styles = {
   btnConfirmOfferDisabled: { flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', background: '#1e293b', color: '#475569', fontWeight: 700, fontSize: 13, cursor: 'not-allowed' },
   btnX: { padding: '8px 10px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 13, cursor: 'pointer' },
   offerPrice: { fontSize: 14, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
+  syncBtn: { padding: '8px 14px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontWeight: 600, fontSize: 12, cursor: 'pointer' },
 };
