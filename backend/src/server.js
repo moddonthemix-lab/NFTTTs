@@ -279,7 +279,12 @@ app.get('/api/scanner/info/:slug', async (req, res) => {
       numOwners: stats?.total?.num_owners || null,
       totalSupply: stats?.total?.count || null,
       bestOfferEth: bestOffer,
-      fees: fees ? { marketplaceFee: fees.marketplaceFee, royaltyFee: fees.royaltyFee } : null,
+      fees: fees ? {
+        marketplaceFee: fees.marketplaceFee,
+        royaltyFee: fees.royaltyFee,
+        enforcedRoyaltyFee: fees.enforcedRoyaltyFee,
+        optionalRoyaltyFee: fees.optionalRoyaltyFee,
+      } : null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

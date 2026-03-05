@@ -9,7 +9,8 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
   const [listPrice, setListPrice] = useState({});
   const [busy, setBusy] = useState({});
   const [bestOffers, setBestOffers] = useState({});  // { [k]: { priceEth, loading } }
-  const [fees, setFees] = useState({});              // { [k]: { marketplaceFee, royaltyFee, loading } }
+  const [fees, setFees] = useState({});              // { [k]: { marketplaceFee, enforcedRoyaltyFee, optionalRoyaltyFee, loading } }
+  const [royaltyOn, setRoyaltyOn] = useState({});   // { [k]: boolean } — optional royalty toggle
   const [syncing, setSyncing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -64,17 +65,22 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
 
   const fetchFees = useCallback(async (k, nft) => {
     if (!nft.collectionSlug) {
-      setFees((p) => ({ ...p, [k]: { marketplaceFee: 2.5, royaltyFee: 5.0, loading: false } }));
+      setFees((p) => ({ ...p, [k]: { marketplaceFee: 1.0, enforcedRoyaltyFee: 0, optionalRoyaltyFee: 5.0, loading: false } }));
+      setRoyaltyOn((p) => ({ ...p, [k]: true }));
       return;
     }
     setFees((p) => ({ ...p, [k]: { loading: true } }));
     try {
       const info = await scannerApi.getInfo(nft.collectionSlug);
-      const mFee = info?.fees?.marketplaceFee ?? 2.5;
-      const rFee = info?.fees?.royaltyFee ?? 5.0;
-      setFees((p) => ({ ...p, [k]: { marketplaceFee: mFee, royaltyFee: rFee, loading: false } }));
+      const mFee = info?.fees?.marketplaceFee ?? 1.0;
+      const enforced = info?.fees?.enforcedRoyaltyFee ?? 0;
+      const optional = info?.fees?.optionalRoyaltyFee ?? (info?.fees?.royaltyFee ?? 0);
+      setFees((p) => ({ ...p, [k]: { marketplaceFee: mFee, enforcedRoyaltyFee: enforced, optionalRoyaltyFee: optional, loading: false } }));
+      // Auto-set toggle: on by default (creator gets paid), but only relevant if optional > 0
+      setRoyaltyOn((p) => ({ ...p, [k]: true }));
     } catch {
-      setFees((p) => ({ ...p, [k]: { marketplaceFee: 2.5, royaltyFee: 5.0, loading: false } }));
+      setFees((p) => ({ ...p, [k]: { marketplaceFee: 1.0, enforcedRoyaltyFee: 0, optionalRoyaltyFee: 5.0, loading: false } }));
+      setRoyaltyOn((p) => ({ ...p, [k]: true }));
     }
   }, []);
 
@@ -93,13 +99,19 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
       return alert('This NFT is missing contract/token data and cannot be listed.\nOnly NFTs with a known token ID can be listed.');
     }
     const feeData = fees[k];
-    const mFee = feeData?.marketplaceFee ?? 2.5;
-    const rFee = feeData?.royaltyFee ?? 5.0;
+    const mFee = feeData?.marketplaceFee ?? 1.0;
+    const enforced = feeData?.enforcedRoyaltyFee ?? 0;
+    const optional = feeData?.optionalRoyaltyFee ?? 0;
+    const includeOptional = royaltyOn[k] !== false;
+    const rFee = enforced + (includeOptional ? optional : 0);
     const totalFeePct = mFee + rFee;
     const proceeds = (parseFloat(price) * (1 - totalFeePct / 100)).toFixed(4);
+    const royaltyNote = enforced > 0 && optional > 0
+      ? `${enforced.toFixed(1)}% enforced + ${optional.toFixed(1)}% optional (${includeOptional ? 'ON' : 'OFF'})`
+      : rFee > 0 ? `${rFee.toFixed(1)}%${enforced > 0 ? ' (enforced)' : ''}` : 'none';
     if (!window.confirm(
       `List ${nft.collectionName || nft.collectionSlug} #${nft.tokenId} for ${price} ETH?\n\n` +
-      `Fees: ${mFee.toFixed(1)}% OpenSea + ${rFee.toFixed(1)}% creator royalty = ${totalFeePct.toFixed(1)}% total\n` +
+      `OpenSea fee: ${mFee.toFixed(1)}%\nCreator royalty: ${royaltyNote}\nTotal: ${totalFeePct.toFixed(1)}%\n` +
       `You receive: ~${proceeds} ETH after fees`
     )) return;
     setBusy((p) => ({ ...p, [k]: true }));
@@ -272,7 +284,12 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
                       </div>
 
                       {/* Fee breakdown */}
-                      <FeeBreakdown feeData={feeData} listPrice={listPrice[k]} />
+                      <FeeBreakdown
+                        feeData={feeData}
+                        listPrice={listPrice[k]}
+                        royaltyOn={royaltyOn[k] !== false}
+                        onToggleRoyalty={() => setRoyaltyOn((p) => ({ ...p, [k]: !(p[k] !== false) }))}
+                      />
                     </div>
                   )}
 
@@ -328,28 +345,68 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
   );
 }
 
-function FeeBreakdown({ feeData, listPrice }) {
-  const mFee = feeData?.marketplaceFee ?? 2.5;
-  const rFee = feeData?.royaltyFee ?? 5.0;
-  const total = mFee + rFee;
+function FeeBreakdown({ feeData, listPrice, royaltyOn, onToggleRoyalty }) {
+  const mFee = feeData?.marketplaceFee ?? 1.0;
+  const enforced = feeData?.enforcedRoyaltyFee ?? 0;
+  const optional = feeData?.optionalRoyaltyFee ?? 0;
+  const hasOptional = optional > 0;
+  const isEnforced = enforced > 0 && optional === 0; // only enforced, no choice
+  const activeRoyalty = enforced + (royaltyOn && hasOptional ? optional : 0);
+  const total = mFee + activeRoyalty;
   const price = parseFloat(listPrice);
 
+  if (feeData?.loading) {
+    return <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Loading fees...</div>;
+  }
+
   return (
-    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, lineHeight: 1.6 }}>
-      {feeData?.loading ? (
-        <span>Loading fees...</span>
-      ) : (
-        <>
-          <span style={{ color: '#94a3b8' }}>
-            Fees: {mFee.toFixed(1)}% OpenSea + {rFee.toFixed(1)}% creator = {total.toFixed(1)}% total
+    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {/* Marketplace fee row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ color: '#94a3b8' }}>OpenSea fee:</span>
+        <span style={{ color: '#f1f5f9', fontWeight: 600 }}>{mFee.toFixed(1)}%</span>
+      </div>
+
+      {/* Creator royalty row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ color: '#94a3b8' }}>Creator royalty:</span>
+        {enforced > 0 && (
+          <span style={{ color: '#f59e0b', fontWeight: 600 }}>{enforced.toFixed(1)}% enforced</span>
+        )}
+        {hasOptional && (
+          <>
+            {enforced > 0 && <span style={{ color: '#475569' }}>+</span>}
+            <span style={{ color: royaltyOn ? '#f1f5f9' : '#475569', fontWeight: 600 }}>{optional.toFixed(1)}% optional</span>
+            <button
+              onClick={onToggleRoyalty}
+              style={{
+                padding: '1px 7px', borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 700,
+                background: royaltyOn ? '#22c55e22' : '#33415555',
+                color: royaltyOn ? '#22c55e' : '#64748b',
+              }}
+            >
+              {royaltyOn ? 'ON' : 'OFF'}
+            </button>
+          </>
+        )}
+        {!enforced && !hasOptional && (
+          <span style={{ color: '#475569' }}>none</span>
+        )}
+        {isEnforced && (
+          <span style={{ color: '#f59e0b', fontSize: 10 }}> — cannot waive</span>
+        )}
+      </div>
+
+      {/* Total + proceeds */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px solid #1e293b', paddingTop: 4 }}>
+        <span style={{ color: '#94a3b8' }}>Total fees:</span>
+        <span style={{ color: '#f1f5f9', fontWeight: 600 }}>{total.toFixed(1)}%</span>
+        {!isNaN(price) && price > 0 && (
+          <span style={{ color: '#22c55e', marginLeft: 4 }}>
+            → ~{(price * (1 - total / 100)).toFixed(4)} ETH to you
           </span>
-          {!isNaN(price) && price > 0 && (
-            <span style={{ color: '#22c55e', marginLeft: 8 }}>
-              → you receive ~{(price * (1 - total / 100)).toFixed(4)} ETH
-            </span>
-          )}
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

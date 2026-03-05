@@ -348,8 +348,10 @@ async function getCollectionFees(slug) {
   try {
     const col = await getCollection(slug);
     const rawFees = col?.fees || [];
-    // OpenSea marketplace fee is always 2.5% — hardcode it.
+    // OpenSea reduced their marketplace fee to 1% in early 2024 — hardcode it.
     // All entries in col.fees are creator royalties.
+    // required=true  → on-chain enforced, cannot be waived
+    // required=false → optional, creator preference only
     // OpenSea returns fee as a plain percentage value (5.0 = 5%, 1.05 = 1.05%)
     const normFee = (v) => {
       if (!v || isNaN(v)) return 0;
@@ -357,12 +359,17 @@ async function getCollectionFees(slug) {
       if (v > 1)   return v;        // already a percentage (5.0 → 5%)
       return v * 100;               // decimal fraction (0.05 → 5%)
     };
-    const marketplaceFee = 2.5; // OpenSea always 2.5%
-    const royaltyFee = Math.min(
-      rawFees.reduce((sum, f) => sum + normFee(Number(f.fee)), 0),
-      15 // cap at 15% to guard against bad data
+    const marketplaceFee = 1.0;
+    const enforcedRoyaltyFee = Math.min(
+      rawFees.filter((f) => f.required).reduce((sum, f) => sum + normFee(Number(f.fee)), 0),
+      15
     );
-    const fees = { marketplaceFee, royaltyFee };
+    const optionalRoyaltyFee = Math.min(
+      rawFees.filter((f) => !f.required).reduce((sum, f) => sum + normFee(Number(f.fee)), 0),
+      15
+    );
+    const royaltyFee = Math.min(enforcedRoyaltyFee + optionalRoyaltyFee, 15);
+    const fees = { marketplaceFee, royaltyFee, enforcedRoyaltyFee, optionalRoyaltyFee };
     _feesCache.set(slug, { fees, fetchedAt: Date.now() });
     return fees;
   } catch {
