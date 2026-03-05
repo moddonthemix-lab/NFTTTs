@@ -412,12 +412,14 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72,
   const domain = seaportDomain(chain);
   const signature = await wallet.signTypedData(domain, SEAPORT_ORDER_TYPES, orderParameters);
 
-  // 3. Submit directly to OpenSea v2 /listings (no /listings/build step needed)
-  logger.info(`[${chain}] Submitting listing to OpenSea: counter=${counter}, salt=${salt}`);
+  // 3. POST /orders/{chain}/seaport/listings — correct v2 create-listing endpoint
+  //    (/listings is read-only; write endpoint lives under /orders like the cancel path)
+  const listingsUrl = `${config.opensea.apiBase}/orders/${chain}/seaport/listings`;
+  logger.info(`[${chain}] Submitting listing to ${listingsUrl} counter=${counter}`);
   let submitRes;
   try {
     submitRes = await axios.post(
-      `${config.opensea.apiBase}/listings`,
+      listingsUrl,
       {
         parameters: orderParameters,
         signature,
@@ -428,7 +430,7 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72,
   } catch (axErr) {
     const body = axErr.response?.data;
     const status = axErr.response?.status;
-    logger.error(`[${chain}] OpenSea /listings error ${status}: ${JSON.stringify(body)}`);
+    logger.error(`[${chain}] OpenSea listing error ${status}: ${JSON.stringify(body)}`);
     throw new Error(
       body ? `OpenSea error ${status}: ${JSON.stringify(body)}` : axErr.message
     );
