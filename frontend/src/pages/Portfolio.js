@@ -41,7 +41,7 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
         .then((url) => setNftImages((p) => ({ ...p, [k]: url || null })))
         .catch(() => setNftImages((p) => ({ ...p, [k]: null })));
     });
-  }, [portfolio]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [portfolio]); // portfolio is the only trigger needed
 
   const handleRefresh = async () => {
     setRefreshing(true);
