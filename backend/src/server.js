@@ -259,14 +259,15 @@ app.get('/api/scanner/best-offer/:slug', async (req, res) => {
   }
 });
 
-// Quick collection info for bid preview — name, image, floor, volume, best offer
+// Quick collection info for bid preview — name, image, floor, volume, best offer, fees
 app.get('/api/scanner/info/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
-    const [col, stats, bestOffer] = await Promise.all([
+    const [col, stats, bestOffer, fees] = await Promise.all([
       openSeaApi.getCollection(slug),
       openSeaApi.getCollectionStats(slug),
       openSeaApi.getCollectionBestOffer(slug),
+      openSeaApi.getCollectionFees(slug).catch(() => null),
     ]);
     if (!col) return res.status(404).json({ error: 'Collection not found' });
     res.json({
@@ -278,6 +279,7 @@ app.get('/api/scanner/info/:slug', async (req, res) => {
       numOwners: stats?.total?.num_owners || null,
       totalSupply: stats?.total?.count || null,
       bestOfferEth: bestOffer,
+      fees: fees ? { marketplaceFee: fees.marketplaceFee, royaltyFee: fees.royaltyFee } : null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
