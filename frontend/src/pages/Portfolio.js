@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { tradesApi, scannerApi, portfolioApi } from '../utils/api';
 import { format } from 'date-fns';
 
@@ -13,12 +13,35 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
   const [royaltyOn, setRoyaltyOn] = useState({});   // { [k]: boolean } — optional royalty toggle
   const [syncing, setSyncing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [nftImages, setNftImages] = useState({});      // { [k]: url | null | 'loading' }
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkPrice, setBulkPrice] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState('');
+  const fetchedRef = useRef(new Set());                // track which keys were already fetched
 
   const fmtUsd = (eth) => {
     if (!ethPrice || eth == null) return null;
     const usd = eth * ethPrice;
     return usd >= 1000 ? `$${Math.round(usd).toLocaleString()}` : `$${usd.toFixed(2)}`;
   };
+
+  // Lazy-load individual NFT images for cards that have no collectionImage
+  useEffect(() => {
+    if (!portfolio?.length) return;
+    portfolio.forEach((nft, i) => {
+      if (!nft.contractAddress || !nft.tokenId) return;
+      if (nft.collectionImage) return;  // already has an image
+      const k = cardKey(nft, i);
+      if (fetchedRef.current.has(k)) return;
+      fetchedRef.current.add(k);
+      setNftImages((p) => ({ ...p, [k]: 'loading' }));
+      scannerApi.getNFTImage(nft.chain || 'ethereum', nft.contractAddress, nft.tokenId)
+        .then((url) => setNftImages((p) => ({ ...p, [k]: url || null })))
+        .catch(() => setNftImages((p) => ({ ...p, [k]: null })));
+    });
+  }, [portfolio]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -148,6 +171,45 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
     setBusy((p) => ({ ...p, [k]: false }));
   };
 
+  const toggleSelected = (k) => setSelected((prev) => {
+    const next = new Set(prev);
+    next.has(k) ? next.delete(k) : next.add(k);
+    return next;
+  });
+
+  const exitBulkMode = () => { setBulkMode(false); setSelected(new Set()); setBulkPrice(''); setBulkProgress(''); };
+
+  const handleBulkList = async () => {
+    const price = parseFloat(bulkPrice);
+    if (!price || isNaN(price) || price <= 0) return alert('Enter a valid price in ETH');
+    const toList = (portfolio || []).filter((nft, i) => {
+      const k = cardKey(nft, i);
+      return selected.has(k) && nft.contractAddress && nft.tokenId;
+    });
+    if (!toList.length) return alert('No valid NFTs selected');
+    if (!window.confirm(`List ${toList.length} NFT${toList.length > 1 ? 's' : ''} for ${price} ETH each?\n\nThis creates ${toList.length} separate listing${toList.length > 1 ? 's' : ''} on OpenSea.`)) return;
+    setBulkBusy(true);
+    let done = 0, failed = 0;
+    for (const nft of toList) {
+      setBulkProgress(`Listing ${done + 1} / ${toList.length}…`);
+      try {
+        await tradesApi.sell(nft.contractAddress, nft.tokenId, price, nft.chain || 'ethereum');
+        done++;
+      } catch (err) {
+        failed++;
+        console.error(`Bulk list failed for ${nft.tokenId}:`, err.response?.data?.error || err.message);
+      }
+    }
+    setBulkBusy(false);
+    setBulkProgress('');
+    const updated = await portfolioApi.get();
+    if (setPortfolio) setPortfolio(updated);
+    exitBulkMode();
+    alert(failed === 0
+      ? `Listed ${done} NFT${done > 1 ? 's' : ''} on OpenSea!`
+      : `${done} listed, ${failed} failed — check console for details`);
+  };
+
   const totalCost = (portfolio || []).reduce((sum, n) => sum + (n.buyPriceEth || 0), 0);
   const canSell = (nft) => !!(nft.contractAddress && nft.tokenId);
 
@@ -165,6 +227,15 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
           <button style={styles.syncBtn} onClick={handleRefresh} disabled={refreshing}>
             {refreshing ? '...' : '↻ Refresh'}
           </button>
+          {!bulkMode ? (
+            <button style={{ ...styles.syncBtn, color: '#a855f7', borderColor: '#7c3aed' }} onClick={() => setBulkMode(true)} disabled={!portfolio?.length}>
+              ☐ Bulk List
+            </button>
+          ) : (
+            <button style={{ ...styles.syncBtn, color: '#ef4444', borderColor: '#ef4444' }} onClick={exitBulkMode}>
+              ✕ Cancel Bulk
+            </button>
+          )}
           <button style={styles.syncBtn} onClick={() => handleSync('ethereum')} disabled={syncing}>
             {syncing ? 'Syncing...' : '+ Sync ETH Wallet'}
           </button>
@@ -194,16 +265,36 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
               ? ((nft.floorPriceEth - nft.buyPriceEth) / nft.buyPriceEth * 100)
               : null;
 
+            const imgSrc = nft.collectionImage || (nftImages[k] !== 'loading' ? nftImages[k] : null);
+            const isSelected = selected.has(k);
+
             return (
-              <div key={k} style={styles.card}>
+              <div
+                key={k}
+                style={{ ...styles.card, ...(isSelected ? styles.cardSelected : {}) }}
+                onClick={bulkMode && sellable ? () => toggleSelected(k) : undefined}
+              >
+                {/* Bulk mode checkbox overlay */}
+                {bulkMode && (
+                  <div style={styles.checkboxOverlay}>
+                    <div style={{ ...styles.checkbox, ...(isSelected ? styles.checkboxChecked : {}) }}>
+                      {isSelected && '✓'}
+                    </div>
+                    {!sellable && <span style={styles.checkboxDisabledNote}>no token ID</span>}
+                  </div>
+                )}
                 <div style={styles.cardTop}>
-                  {nft.collectionImage && (
+                  {imgSrc ? (
                     <img
-                      src={nft.collectionImage}
+                      src={imgSrc}
                       alt=""
                       style={styles.thumb}
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
+                  ) : (
+                    <div style={{ ...styles.thumb, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#334155', fontSize: 20 }}>
+                      {nftImages[k] === 'loading' ? '' : '◇'}
+                    </div>
                   )}
                   <div style={styles.cardTopText}>
                     <div style={styles.name}>{nft.collectionName || nft.collectionSlug}</div>
@@ -244,8 +335,8 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
                     )}
                   </div>
 
-                  {/* Sell buttons — only when no action open */}
-                  {!mode && (
+                  {/* Sell buttons — hidden in bulk mode or when an action is open */}
+                  {!mode && !bulkMode && (
                     <div style={styles.btnRow}>
                       {sellable ? (
                         <button style={styles.btnOffer} onClick={() => openAction(k, nft, 'offer')}>
@@ -351,6 +442,36 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
           })}
         </div>
       )}
+
+      {/* Bulk listing bottom action bar */}
+      {bulkMode && (
+        <div style={styles.bulkBar}>
+          <div style={styles.bulkBarInner}>
+            <span style={styles.bulkCount}>
+              {selected.size} NFT{selected.size !== 1 ? 's' : ''} selected
+            </span>
+            <div style={styles.bulkInputRow}>
+              <input
+                style={styles.bulkInput}
+                type="number"
+                step="0.001"
+                min="0"
+                placeholder="Price per NFT (ETH)"
+                value={bulkPrice}
+                onChange={(e) => setBulkPrice(e.target.value)}
+              />
+              <button
+                style={{ ...styles.btnConfirm, opacity: (!selected.size || !bulkPrice || bulkBusy) ? 0.5 : 1 }}
+                onClick={handleBulkList}
+                disabled={!selected.size || !bulkPrice || bulkBusy}
+              >
+                {bulkBusy ? (bulkProgress || 'Listing…') : `List ${selected.size || ''} for ${bulkPrice || '?'} ETH each`}
+              </button>
+              <button style={styles.btnX} onClick={exitBulkMode}>✕</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -439,7 +560,7 @@ const styles = {
   empty: { textAlign: 'center', padding: '60px 0', color: '#64748b', fontSize: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 },
   emptyIcon: { fontSize: 40, color: '#334155' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 },
-  card: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  card: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative', cursor: 'default' },
   cardTop: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid #1e293b' },
   thumb: { width: 52, height: 52, borderRadius: 8, objectFit: 'cover', flexShrink: 0, background: '#1e293b' },
   cardTopText: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 },
@@ -464,4 +585,14 @@ const styles = {
   syncBtn: { padding: '8px 14px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontWeight: 600, fontSize: 12, cursor: 'pointer' },
   listedBadge: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 600, color: '#c084fc' },
   listedDot: { color: '#a855f7', fontSize: 8 },
+  cardSelected: { border: '1px solid #7c3aed', boxShadow: '0 0 0 2px rgba(124,58,237,0.3)' },
+  checkboxOverlay: { position: 'absolute', top: 10, right: 10, zIndex: 2, display: 'flex', alignItems: 'center', gap: 4 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, border: '2px solid #334155', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' },
+  checkboxChecked: { background: '#7c3aed', borderColor: '#7c3aed' },
+  checkboxDisabledNote: { fontSize: 10, color: '#475569' },
+  bulkBar: { position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100, background: '#0f172a', borderTop: '1px solid #334155', padding: '12px 24px', boxShadow: '0 -4px 24px rgba(0,0,0,0.5)' },
+  bulkBarInner: { maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
+  bulkCount: { fontSize: 14, fontWeight: 700, color: '#a855f7', whiteSpace: 'nowrap' },
+  bulkInputRow: { display: 'flex', gap: 8, flex: 1, flexWrap: 'wrap' },
+  bulkInput: { width: 200, padding: '9px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1e293b', color: '#f1f5f9', fontSize: 13, outline: 'none' },
 };
