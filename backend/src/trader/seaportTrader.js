@@ -403,7 +403,7 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72,
     endTime: (now + expirationHours * 3600).toString(),
     zoneHash: ethers.ZeroHash,
     salt,
-    conduitKey: ethers.ZeroHash,
+    conduitKey: OS_CONDUIT_KEY,
     counter: counter.toString(),
     totalOriginalConsiderationItems: 1,
   };
