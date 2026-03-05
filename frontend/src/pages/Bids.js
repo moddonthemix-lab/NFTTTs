@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { bidsApi, scannerApi } from '../utils/api';
 import { format } from 'date-fns';
 
@@ -10,10 +10,29 @@ export default function Bids({ bids, setBids }) {
   const [chain, setChain] = useState('ethereum');
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState({});
+  const [removing, setRemoving] = useState({});
   const [filling, setFilling] = useState({});
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState(null);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Auto-refresh bids every 3 minutes — picks up any fills detected by the backend monitor
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setRefreshing(true);
+    try {
+      const fresh = await bidsApi.get();
+      setBids(fresh);
+      setLastRefresh(new Date());
+    } catch { /* ignore */ }
+    if (!silent) setRefreshing(false);
+  }, [setBids]);
+
+  useEffect(() => {
+    const id = setInterval(() => refresh(true), 3 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [refresh]);
 
   const handleLookup = async () => {
     if (!slug.trim()) return;
@@ -55,11 +74,22 @@ export default function Bids({ bids, setBids }) {
     try {
       await bidsApi.cancel(bid.orderHash, bid.chain || 'ethereum');
       setBids?.((prev) => prev.filter((b) => b.orderHash !== bid.orderHash));
-      alert('Bid cancelled');
     } catch (err) {
       alert(`Cancel failed: ${err.response?.data?.error || err.message}`);
     }
     setCancelling((p) => ({ ...p, [bid.orderHash]: false }));
+  };
+
+  const handleRemove = async (bid) => {
+    if (!window.confirm(`Remove "${bid.collectionSlug}" bid from the list?\n\nThis only removes it locally — it does NOT cancel the offer on-chain. Use Cancel if the bid is still active on OpenSea.`)) return;
+    setRemoving((p) => ({ ...p, [bid.orderHash]: true }));
+    try {
+      await bidsApi.remove(bid.orderHash);
+      setBids?.((prev) => prev.filter((b) => b.orderHash !== bid.orderHash));
+    } catch (err) {
+      alert(`Remove failed: ${err.response?.data?.error || err.message}`);
+    }
+    setRemoving((p) => ({ ...p, [bid.orderHash]: false }));
   };
 
   const handleFill = async (bid) => {
@@ -80,11 +110,19 @@ export default function Bids({ bids, setBids }) {
       <div style={styles.header}>
         <div>
           <h1 style={styles.h1}>Active Bids</h1>
-          <p style={styles.sub}>{(bids || []).length} active collection bids</p>
+          <p style={styles.sub}>
+            {(bids || []).length} active collection bids
+            {lastRefresh && <span style={{ color: '#475569', marginLeft: 8 }}>· checked {format(lastRefresh, 'HH:mm:ss')}</span>}
+          </p>
         </div>
-        <button style={styles.btnNew} onClick={() => { setShowForm(!showForm); setPreview(null); setPreviewError(null); }}>
-          {showForm ? '✗ Cancel' : '+ New Bid'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={styles.btnRefresh} onClick={() => refresh(false)} disabled={refreshing} title="Check for filled bids now">
+            {refreshing ? '⟳' : '↻ Refresh'}
+          </button>
+          <button style={styles.btnNew} onClick={() => { setShowForm(!showForm); setPreview(null); setPreviewError(null); }}>
+            {showForm ? '✗ Cancel' : '+ New Bid'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -220,8 +258,17 @@ export default function Bids({ bids, setBids }) {
                   style={styles.btnCancel}
                   onClick={() => handleCancel(bid)}
                   disabled={cancelling[bid.orderHash]}
+                  title="Cancel bid on OpenSea and remove from list"
                 >
                   {cancelling[bid.orderHash] ? '...' : 'Cancel'}
+                </button>
+                <button
+                  style={styles.btnRemove}
+                  onClick={() => handleRemove(bid)}
+                  disabled={removing[bid.orderHash]}
+                  title="Remove from list only (does not cancel on-chain)"
+                >
+                  {removing[bid.orderHash] ? '...' : '✕'}
                 </button>
               </div>
             </div>
@@ -263,8 +310,10 @@ const styles = {
   bidSlug: { fontWeight: 600, fontSize: 15 },
   bidMeta: { display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' },
   hash: { fontSize: 11, color: '#334155' },
+  btnRefresh: { padding: '7px 14px', borderRadius: 9, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontWeight: 600, fontSize: 13, cursor: 'pointer' },
   btnFill: { padding: '7px 16px', borderRadius: 8, border: '1px solid #22c55e', background: 'transparent', color: '#22c55e', fontWeight: 600, fontSize: 13, cursor: 'pointer' },
-  btnCancel: { padding: '7px 16px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#ef4444', fontWeight: 600, fontSize: 13 },
+  btnCancel: { padding: '7px 16px', borderRadius: 8, border: '1px solid #ef444455', background: 'transparent', color: '#ef4444', fontWeight: 600, fontSize: 13, cursor: 'pointer' },
+  btnRemove: { padding: '7px 10px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' },
   chainRow: { display: 'flex', gap: 8 },
   chainBtn: { flex: 1, padding: '9px 0', borderRadius: 9, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontWeight: 600, fontSize: 13, cursor: 'pointer' },
   chainBtnActive: { border: '1px solid #eab308', color: '#eab308', background: '#1e293b' },

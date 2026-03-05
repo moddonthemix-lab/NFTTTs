@@ -98,11 +98,14 @@ async function scanForOpportunities() {
         const liquidity = liquidityScore(stats);
         const oneHourChange = oneHourInterval.volume_change || 0;
 
-        // Base and watchlisted collections bypass ETH-mainnet-tuned filters.
-        // Base is a younger chain: lower volumes and much lower floor prices.
-        if (!isWatchlisted && chain !== 'base' && oneDayVolume < config.scanner.minCollectionVolume) { logger.info(`${slug}: skipped (vol ${oneDayVolume.toFixed(2)} < ${config.scanner.minCollectionVolume})`); continue; }
-        if (chain !== 'base' && floorPrice < config.scanner.minFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} < ${config.scanner.minFloorPrice})`); continue; }
-        if (chain !== 'base' && floorPrice > config.scanner.maxFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
+        // Filter: skip dead collections with no activity.
+        // Volume OR sales count must clear the bar — cheap collections have tiny ETH volume
+        // but can have lots of sales (e.g. 100 sales × $0.50 = $50 ≈ 0.02 ETH volume).
+        const oneDaySalesCount = oneDayInterval.sales || 0;
+        const hasActivity = oneDayVolume >= config.scanner.minCollectionVolume || oneDaySalesCount >= 5;
+        if (!isWatchlisted && !hasActivity) { logger.info(`${slug}: skipped (vol ${oneDayVolume.toFixed(4)} ETH, ${oneDaySalesCount} sales — no activity)`); continue; }
+        if (floorPrice > 0 && floorPrice < config.scanner.minFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} < ${config.scanner.minFloorPrice})`); continue; }
+        if (floorPrice > config.scanner.maxFloorPrice) { logger.info(`${slug}: skipped (floor ${floorPrice} > ${config.scanner.maxFloorPrice})`); continue; }
         logger.info(`${slug} [${chain}]${isWatchlisted ? ' [watchlist]' : ''}: floor=${floorPrice} ETH, vol=${oneDayVolume.toFixed(2)} ETH — scanning ${listings.length} listings`);
 
         // Deduplicate by tokenId — keep only the cheapest listing per token

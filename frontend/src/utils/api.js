@@ -68,6 +68,7 @@ export const bidsApi = {
   place: (collectionSlug, offerAmountEth, expirationHours = 24, chain = 'ethereum') =>
     api.post('/bids/place', { collectionSlug, offerAmountEth, expirationHours, chain }).then((r) => r.data),
   cancel: (orderHash, chain = 'ethereum') => api.delete(`/bids/${orderHash}?chain=${chain}`).then((r) => r.data),
+  remove: (orderHash) => api.delete(`/bids/${orderHash}/remove`).then((r) => r.data),
   fill: (orderHash) => api.post(`/bids/${orderHash}/fill`).then((r) => r.data),
 };
 

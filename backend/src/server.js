@@ -331,10 +331,18 @@ app.delete('/api/bids/:orderHash', async (req, res) => {
   try {
     const chain = req.query.chain || 'ethereum';
     await cancelOrder(req.params.orderHash, chain);
+    db.removeBidByOrderHash(req.params.orderHash);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Force-remove a bid from DB without calling the blockchain cancel.
+// Use when a bid is expired/unfunded and you just want to clean up the list.
+app.delete('/api/bids/:orderHash/remove', (req, res) => {
+  db.removeBidByOrderHash(req.params.orderHash);
+  res.json({ success: true });
 });
 
 app.post('/api/bids/:orderHash/fill', async (req, res) => {

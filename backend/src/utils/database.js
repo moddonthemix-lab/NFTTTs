@@ -166,9 +166,17 @@ function addTrade(trade) {
 // --- Bids ---
 function addBid(bid) {
   const db = readDb();
-  db.bids = db.bids.filter(
-    (b) => !(b.tokenId === bid.tokenId && b.contractAddress === bid.contractAddress)
-  );
+  // For specific-NFT bids deduplicate by tokenId+contract.
+  // Collection bids have no tokenId/contractAddress — only deduplicate by orderHash,
+  // so multiple bids on the same collection at different amounts are all kept.
+  if (bid.tokenId && bid.contractAddress) {
+    db.bids = db.bids.filter(
+      (b) => !(b.tokenId === bid.tokenId && b.contractAddress === bid.contractAddress)
+    );
+  }
+  if (bid.orderHash) {
+    db.bids = db.bids.filter((b) => b.orderHash !== bid.orderHash);
+  }
   db.bids.push({ ...bid, placedAt: new Date().toISOString() });
   db.stats.totalBids += 1;
   writeDb(db);

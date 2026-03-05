@@ -19,8 +19,8 @@ const config = {
   },
   scanner: {
     intervalSeconds: parseInt(process.env.SCAN_INTERVAL_SECONDS || '60'),
-    minCollectionVolume: parseFloat(process.env.MIN_COLLECTION_VOLUME || '1'),
-    minFloorPrice: parseFloat(process.env.MIN_FLOOR_PRICE || '0.01'),
+    minCollectionVolume: parseFloat(process.env.MIN_COLLECTION_VOLUME || '0.001'),
+    minFloorPrice: parseFloat(process.env.MIN_FLOOR_PRICE || '0.0001'),
     maxFloorPrice: parseFloat(process.env.MAX_FLOOR_PRICE || '2.0'),
   },
   server: {
