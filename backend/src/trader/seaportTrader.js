@@ -366,72 +366,68 @@ async function sellNFT(contractAddress, tokenId, priceEth, expirationHours = 72,
   const { seaportAddress } = chainCfg(chain);
   logger.info(`[${chain}] Listing ${contractAddress}/${tokenId} for ${priceEth} ETH`);
 
+  // 1. Fetch counter from Seaport contract — required for EIP-712 order hash
+  const seaportAbi = ['function getCounter(address offerer) view returns (uint256 counter)'];
+  const seaport = new ethers.Contract(seaportAddress, seaportAbi, wallet);
+  const counter = await seaport.getCounter(wallet.address);
+
   const priceWei = ethers.parseEther(priceEth.toString());
   const now = Math.floor(Date.now() / 1000);
+  // salt must be a valid uint256 decimal string
+  const salt = BigInt(ethers.hexlify(ethers.randomBytes(16))).toString();
 
-  const buildPayload = {
-    parameters: {
-      offerer: wallet.address,
-      offer: [
-        {
-          itemType: 2,                                // ERC721
-          token: contractAddress,
-          identifierOrCriteria: tokenId.toString(),
-          startAmount: '1',
-          endAmount: '1',
-        },
-      ],
-      consideration: [
-        {
-          itemType: 0,                                // native ETH
-          token: ethers.ZeroAddress,
-          identifierOrCriteria: '0',
-          startAmount: priceWei.toString(),
-          endAmount: priceWei.toString(),
-          recipient: wallet.address,
-        },
-      ],
-      startTime: now.toString(),
-      endTime: (now + expirationHours * 3600).toString(),
-      orderType: 0,                                   // FULL_OPEN
-      zone: ethers.ZeroAddress,
-      zoneHash: ethers.ZeroHash,
-      salt: ethers.hexlify(ethers.randomBytes(32)),
-      conduitKey: ethers.ZeroHash,
-      totalOriginalConsiderationItems: '1',
-    },
-    protocol_address: seaportAddress,
+  const orderParameters = {
+    offerer: wallet.address,
+    zone: ethers.ZeroAddress,
+    offer: [
+      {
+        itemType: 2,                                 // ERC721
+        token: contractAddress,
+        identifierOrCriteria: tokenId.toString(),
+        startAmount: '1',
+        endAmount: '1',
+      },
+    ],
+    consideration: [
+      {
+        itemType: 0,                                 // native ETH
+        token: ethers.ZeroAddress,
+        identifierOrCriteria: '0',
+        startAmount: priceWei.toString(),
+        endAmount: priceWei.toString(),
+        recipient: wallet.address,
+      },
+    ],
+    orderType: 0,                                    // FULL_OPEN
+    startTime: now.toString(),
+    endTime: (now + expirationHours * 3600).toString(),
+    zoneHash: ethers.ZeroHash,
+    salt,
+    conduitKey: ethers.ZeroHash,
+    counter: counter.toString(),
+    totalOriginalConsiderationItems: 1,
   };
 
-  const buildRes = await axios.post(
-    `${config.opensea.apiBase}/listings/build`,
-    buildPayload,
-    { headers: osHeaders() }
-  );
+  // 2. Sign order with EIP-712 (SEAPORT_ORDER_TYPES excludes totalOriginalConsiderationItems)
+  const domain = seaportDomain(chain);
+  const signature = await wallet.signTypedData(domain, SEAPORT_ORDER_TYPES, orderParameters);
 
-  if (!buildRes.data) throw new Error('Empty response from /listings/build');
-  const orderData = buildRes.data;
-
-  // OpenSea may return ready-made EIP-712 fields or just parameters — handle both
-  const domain      = orderData.domain   || seaportDomain(chain);
-  const orderParams = orderData.value    || orderData.parameters || orderData;
-  const rawTypes    = orderData.types    || SEAPORT_ORDER_TYPES;
-  // ethers v6 handles domain separately — strip EIP712Domain if present in types
-  const types = Object.fromEntries(Object.entries(rawTypes).filter(([k]) => k !== 'EIP712Domain'));
-
-  const signature = await wallet.signTypedData(domain, types, orderParams);
-
+  // 3. Submit directly to OpenSea v2 /listings (no /listings/build step needed)
   const submitRes = await axios.post(
     `${config.opensea.apiBase}/listings`,
     {
-      parameters: orderData.parameters || orderParams,
-      protocol_address: seaportAddress,
+      parameters: orderParameters,
       signature,
+      protocol_address: seaportAddress,
     },
     { headers: osHeaders() }
   );
 
-  const orderHash = submitRes.data?.order_hash;
+  if (submitRes.data?.errors?.length) {
+    throw new Error(`OpenSea rejected listing: ${JSON.stringify(submitRes.data.errors)}`);
+  }
+
+  const orderHash = submitRes.data?.order_hash || submitRes.data?.order?.order_hash;
   logger.info(`Listed token ${tokenId}: order ${orderHash}`);
 
   return { orderHash, contractAddress, tokenId, priceEth };

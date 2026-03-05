@@ -299,7 +299,9 @@ app.get('/api/scanner/search', async (req, res) => {
     const collections = await openSeaApi.searchCollections(q, chain);
     res.json({ collections });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Surface the actual OpenSea API error response if available
+    const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+    res.status(500).json({ error: detail });
   }
 });
 
