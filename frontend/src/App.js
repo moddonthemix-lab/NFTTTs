@@ -12,6 +12,7 @@ import Wallet from './pages/Wallet';
 import Logs from './pages/Logs';
 import Favorites from './pages/Favorites';
 import WhaleTracker from './pages/WhaleTracker';
+import TheClaw from './pages/TheClaw';
 import { useSocket } from './hooks/useSocket';
 import { ethPriceApi } from './utils/api';
 
@@ -98,6 +99,7 @@ function AppInner() {
               element={<Logs logs={logs} />}
             />
             <Route path="/whales" element={<WhaleTracker ethPrice={ethPrice} />} />
+            <Route path="/claw" element={<TheClaw ethPrice={ethPrice} />} />
           </Routes>
         </main>
       </div>

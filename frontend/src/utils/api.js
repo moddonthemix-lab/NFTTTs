@@ -48,6 +48,11 @@ export const portfolioApi = {
   sync: (chain = 'ethereum') => api.post('/portfolio/sync', { chain }).then((r) => r.data),
 };
 
+export const mintApi = {
+  mint: (contractAddress, quantity, pricePerNftEth, chain = 'ethereum', customCalldata = null) =>
+    api.post('/mint', { contractAddress, quantity, pricePerNftEth, chain, customCalldata }).then((r) => r.data),
+};
+
 export const tradesApi = {
   get: (limit = 100) => api.get('/trades', { params: { limit } }).then((r) => r.data),
   buy: (listing) => api.post('/trade/buy', { listing }).then((r) => r.data),

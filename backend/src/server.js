@@ -15,6 +15,7 @@ const openSeaApi = require('./scanner/openSeaApi');
 const { getEthPriceUsd } = openSeaApi;
 const botEngine = require('./trader/botEngine');
 const { buyNFT, placeBid, sellNFT, acceptBestOffer, cancelOrder, getDiagnostics } = require('./trader/seaportTrader');
+const { mintNFT } = require('./trader/mintTrader');
 const { weiToEth } = require('./analyzer/scorer');
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -469,6 +470,21 @@ app.post('/api/favorites', (req, res) => {
 app.delete('/api/favorites/:id', (req, res) => {
   db.removeFavorite(wa(), decodeURIComponent(req.params.id));
   res.json({ success: true });
+});
+
+// --- Mint ---
+app.post('/api/mint', async (req, res) => {
+  try {
+    const { contractAddress, quantity = 1, pricePerNftEth = 0, chain = 'ethereum', customCalldata = null } = req.body;
+    if (!contractAddress) return res.status(400).json({ error: 'contractAddress required' });
+    if (!/^0x[a-fA-F0-9]{40}$/.test(contractAddress)) return res.status(400).json({ error: 'Invalid contract address' });
+    const result = await mintNFT(contractAddress, Number(quantity), Number(pricePerNftEth), chain, customCalldata || null);
+    db.addTrade({ type: 'mint', contractAddress, quantity: Number(quantity), priceEth: Number(pricePerNftEth) * Number(quantity), chain, txHash: result.txHash });
+    io.emit('trade:mint', result);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- Snipe Floor (buy single cheapest listing) ---

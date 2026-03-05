@@ -11,6 +11,7 @@ const NAV = [
   { path: '/trades', label: 'Trade History', icon: '≡' },
   { path: '/wallet', label: 'Wallet', icon: '◎' },
   { path: '/whales', label: 'Whale Tracker', icon: '◬' },
+  { path: '/claw', label: 'The Claw', icon: '✦' },
   { path: '/logs', label: 'Logs', icon: '▤' },
 ];
 
