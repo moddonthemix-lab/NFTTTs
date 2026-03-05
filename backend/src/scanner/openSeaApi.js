@@ -348,19 +348,20 @@ async function getCollectionFees(slug) {
   try {
     const col = await getCollection(slug);
     const rawFees = col?.fees || [];
-    // Normalize fee to percentage regardless of API format:
-    //   decimal  (0.025) → * 100 → 2.5%
-    //   percent  (2.5)   → as-is → 2.5%
-    //   basis pts (250)  → / 100 → 2.5%
-    const normFee = (f) => {
-      const v = f.fee;
-      if (v > 100) return v / 100;   // basis points (e.g. 250 → 2.5)
-      if (v > 1)   return v;          // already a percentage (e.g. 2.5 → 2.5)
-      return v * 100;                 // decimal fraction (e.g. 0.025 → 2.5)
+    // OpenSea marketplace fee is always 2.5% — hardcode it.
+    // All entries in col.fees are creator royalties.
+    // OpenSea returns fee as a plain percentage value (5.0 = 5%, 1.05 = 1.05%)
+    const normFee = (v) => {
+      if (!v || isNaN(v)) return 0;
+      if (v > 100) return v / 100;  // basis-point fallback (250 → 2.5)
+      if (v > 1)   return v;        // already a percentage (5.0 → 5%)
+      return v * 100;               // decimal fraction (0.05 → 5%)
     };
-    // OpenSea marks its own platform fee as required=true; creator royalties are required=false
-    const marketplaceFee = rawFees.filter((f) => f.required).reduce((sum, f) => sum + normFee(f), 0) || 2.5;
-    const royaltyFee = rawFees.filter((f) => !f.required).reduce((sum, f) => sum + normFee(f), 0);
+    const marketplaceFee = 2.5; // OpenSea always 2.5%
+    const royaltyFee = Math.min(
+      rawFees.reduce((sum, f) => sum + normFee(Number(f.fee)), 0),
+      15 // cap at 15% to guard against bad data
+    );
     const fees = { marketplaceFee, royaltyFee };
     _feesCache.set(slug, { fees, fetchedAt: Date.now() });
     return fees;
@@ -369,7 +370,12 @@ async function getCollectionFees(slug) {
   }
 }
 
+function clearFeesCache() {
+  _feesCache.clear();
+}
+
 module.exports = {
+  clearFeesCache,
   getTrendingCollections,
   searchCollections,
   getCollectionStats,

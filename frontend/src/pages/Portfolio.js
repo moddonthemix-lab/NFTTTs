@@ -11,11 +11,21 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
   const [bestOffers, setBestOffers] = useState({});  // { [k]: { priceEth, loading } }
   const [fees, setFees] = useState({});              // { [k]: { marketplaceFee, royaltyFee, loading } }
   const [syncing, setSyncing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fmtUsd = (eth) => {
     if (!ethPrice || eth == null) return null;
     const usd = eth * ethPrice;
     return usd >= 1000 ? `$${Math.round(usd).toLocaleString()}` : `$${usd.toFixed(2)}`;
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const updated = await portfolioApi.get();
+      if (setPortfolio) setPortfolio(updated);
+    } catch { /* silent */ }
+    setRefreshing(false);
   };
 
   const handleSync = async (chain = 'ethereum') => {
@@ -136,12 +146,15 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
             {ethPrice && totalCost > 0 && <span style={{ color: '#64748b' }}> ({fmtUsd(totalCost)})</span>}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button style={styles.syncBtn} onClick={handleRefresh} disabled={refreshing}>
+            {refreshing ? '...' : '↻ Refresh'}
+          </button>
           <button style={styles.syncBtn} onClick={() => handleSync('ethereum')} disabled={syncing}>
-            {syncing ? 'Syncing...' : '⟳ Sync ETH Wallet'}
+            {syncing ? 'Syncing...' : '+ Sync ETH Wallet'}
           </button>
           <button style={styles.syncBtn} onClick={() => handleSync('base')} disabled={syncing}>
-            {syncing ? '' : '⟳ Sync Base Wallet'}
+            {syncing ? '' : '+ Sync Base Wallet'}
           </button>
         </div>
       </div>
@@ -168,21 +181,25 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
 
             return (
               <div key={k} style={styles.card}>
-                {nft.collectionImage && (
-                  <img
-                    src={nft.collectionImage}
-                    alt=""
-                    style={styles.img}
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                  />
-                )}
-                <div style={styles.info}>
-                  <div style={styles.name}>{nft.collectionName || nft.collectionSlug}</div>
-                  <div style={styles.tokenId} className="mono">
-                    {nft.tokenId
-                      ? `#${nft.tokenId}`
-                      : <span style={{ color: '#475569' }}>token unknown</span>}
+                <div style={styles.cardTop}>
+                  {nft.collectionImage && (
+                    <img
+                      src={nft.collectionImage}
+                      alt=""
+                      style={styles.thumb}
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  )}
+                  <div style={styles.cardTopText}>
+                    <div style={styles.name}>{nft.collectionName || nft.collectionSlug}</div>
+                    <div style={styles.tokenId} className="mono">
+                      {nft.tokenId
+                        ? `#${nft.tokenId}`
+                        : <span style={{ color: '#475569' }}>token unknown</span>}
+                    </div>
                   </div>
+                </div>
+                <div style={styles.info}>
 
                   <div style={styles.meta}>
                     <MetaItem label="Paid" value={`${fmt(nft.buyPriceEth)} ETH`} sub={fmtUsd(nft.buyPriceEth)} />
@@ -354,11 +371,13 @@ const styles = {
   sub: { color: '#64748b', fontSize: 13, marginTop: 2 },
   empty: { textAlign: 'center', padding: '60px 0', color: '#64748b', fontSize: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 },
   emptyIcon: { fontSize: 40, color: '#334155' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 },
   card: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
-  img: { width: '100%', height: 180, objectFit: 'cover' },
-  info: { padding: 16, display: 'flex', flexDirection: 'column', gap: 8 },
-  name: { fontWeight: 600, fontSize: 15 },
+  cardTop: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid #1e293b' },
+  thumb: { width: 52, height: 52, borderRadius: 8, objectFit: 'cover', flexShrink: 0, background: '#1e293b' },
+  cardTopText: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 },
+  info: { padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 },
+  name: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   tokenId: { fontSize: 12, color: '#64748b' },
   meta: { display: 'flex', flexWrap: 'wrap', gap: 0, marginBottom: 4 },
   btnRow: { display: 'flex', gap: 8 },
