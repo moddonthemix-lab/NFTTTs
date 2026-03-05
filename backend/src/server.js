@@ -79,7 +79,7 @@ botEmitter.onAny?.((event, data) => {
 const BOT_EVENTS = [
   'scan:started', 'scan:collections', 'scan:opportunities', 'scan:error',
   'bot:started', 'bot:stopped', 'bot:cycle', 'bot:balance', 'bot:warn', 'bot:error',
-  'trade:buy', 'trade:sell', 'trade:bid', 'trade:bid_filled', 'trade:error',
+  'trade:buy', 'trade:sell', 'trade:bid', 'trade:bid_filled', 'trade:list', 'trade:error',
   'approval:queued', 'approval:resolved',
 ];
 BOT_EVENTS.forEach((evt) => {
@@ -539,7 +539,28 @@ app.post('/api/trade/sell', async (req, res) => {
     if (!contractAddress || !tokenId || !priceEth) {
       return res.status(400).json({ error: 'contractAddress, tokenId, priceEth required' });
     }
+    const portfolioItem = db.getPortfolio().find(
+      (n) => n.contractAddress?.toLowerCase() === contractAddress.toLowerCase() && n.tokenId === tokenId
+    );
     const result = await sellNFT(contractAddress, tokenId, priceEth, 72, chain);
+    const listPrice = parseFloat(priceEth);
+    db.addTrade({
+      type: 'list',
+      contractAddress,
+      tokenId,
+      collectionSlug: portfolioItem?.collectionSlug,
+      collectionName: portfolioItem?.collectionName,
+      priceEth: listPrice,
+      orderHash: result.orderHash,
+      chain,
+    });
+    db.updatePortfolioListing(contractAddress, tokenId, {
+      listed: true,
+      listingPriceEth: listPrice,
+      listingOrderHash: result.orderHash,
+      listedAt: new Date().toISOString(),
+    });
+    io.emit('trade:list', { contractAddress, tokenId, collectionSlug: portfolioItem?.collectionSlug, priceEth: listPrice, orderHash: result.orderHash });
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -181,7 +181,7 @@ export default function Dashboard({ walletInfo, botRunning, stats, trades, portf
             {(trades || []).slice(0, 20).map((t, i) => (
               <div key={i} style={styles.trow}>
                 <span>
-                  <span style={{ color: t.type === 'buy' ? '#6366f1' : t.type === 'sell' ? '#22c55e' : '#eab308' }}>
+                  <span style={{ color: t.type === 'buy' ? '#6366f1' : t.type === 'sell' ? '#22c55e' : t.type === 'list' ? '#a855f7' : '#eab308' }}>
                     {t.type?.toUpperCase()}
                   </span>
                 </span>

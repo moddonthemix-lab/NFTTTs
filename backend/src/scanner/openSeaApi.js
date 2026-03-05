@@ -352,20 +352,34 @@ async function getCollectionFees(slug) {
     // All entries in col.fees are creator royalties.
     // required=true  → on-chain enforced, cannot be waived
     // required=false → optional, creator preference only
-    // OpenSea returns fee as a plain percentage value (5.0 = 5%, 1.05 = 1.05%)
+    // OpenSea fee values: plain percentage (5.0 = 5%), basis points (500 = 5%), or decimal (0.05 = 5%)
     const normFee = (v) => {
       if (!v || isNaN(v)) return 0;
-      if (v > 100) return v / 100;  // basis-point fallback (250 → 2.5)
-      if (v > 1)   return v;        // already a percentage (5.0 → 5%)
-      return v * 100;               // decimal fraction (0.05 → 5%)
+      if (v >= 100) return v / 100;  // basis points: 500 → 5.0
+      if (v >= 1)   return v;        // percentage:   5.0 → 5.0, 1.0 → 1.0
+      return v * 100;                // decimal:      0.05 → 5.0
     };
+
+    // Deduplicate entries by recipient — some collections repeat the same address
+    // multiple times (once per EIP-2981 path), which would otherwise double-count the fee
+    const seenRecipients = new Set();
+    const dedupedFees = rawFees.filter((f) => {
+      const r = (f.recipient || '').toLowerCase();
+      if (!r) return true;              // no recipient → always keep
+      if (seenRecipients.has(r)) return false;
+      seenRecipients.add(r);
+      return true;
+    });
+
+    logger.debug(`[fees] ${slug}: ${dedupedFees.length} fee entries (${rawFees.length} raw): ${JSON.stringify(dedupedFees)}`);
+
     const marketplaceFee = 1.0;
     const enforcedRoyaltyFee = Math.min(
-      rawFees.filter((f) => f.required).reduce((sum, f) => sum + normFee(Number(f.fee)), 0),
+      dedupedFees.filter((f) => f.required).reduce((sum, f) => sum + normFee(Number(f.fee)), 0),
       15
     );
     const optionalRoyaltyFee = Math.min(
-      rawFees.filter((f) => !f.required).reduce((sum, f) => sum + normFee(Number(f.fee)), 0),
+      dedupedFees.filter((f) => !f.required).reduce((sum, f) => sum + normFee(Number(f.fee)), 0),
       15
     );
     const royaltyFee = Math.min(enforcedRoyaltyFee + optionalRoyaltyFee, 15);

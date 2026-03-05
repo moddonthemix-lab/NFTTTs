@@ -119,6 +119,9 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
       await tradesApi.sell(nft.contractAddress, nft.tokenId, parseFloat(price), nft.chain || 'ethereum');
       alert('Listed on OpenSea! It will sell when someone buys at your price.');
       closeAction(k);
+      // Refresh so the card shows the listed badge + price
+      const updated = await portfolioApi.get();
+      if (setPortfolio) setPortfolio(updated);
     } catch (err) {
       alert(`List failed: ${err.response?.data?.error || err.message}`);
     }
@@ -212,6 +215,13 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
                   </div>
                 </div>
                 <div style={styles.info}>
+
+                  {nft.listed && (
+                    <div style={styles.listedBadge}>
+                      <span style={styles.listedDot}>●</span>
+                      Listed for {fmt(nft.listingPriceEth)} ETH
+                    </div>
+                  )}
 
                   <div style={styles.meta}>
                     <MetaItem label="Paid" value={`${fmt(nft.buyPriceEth)} ETH`} sub={fmtUsd(nft.buyPriceEth)} />
@@ -452,4 +462,6 @@ const styles = {
   btnX: { padding: '8px 10px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 13, cursor: 'pointer' },
   offerPrice: { fontSize: 14, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
   syncBtn: { padding: '8px 14px', borderRadius: 8, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', fontWeight: 600, fontSize: 12, cursor: 'pointer' },
+  listedBadge: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 600, color: '#c084fc' },
+  listedDot: { color: '#a855f7', fontSize: 8 },
 };

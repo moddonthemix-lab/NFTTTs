@@ -6,7 +6,7 @@ export default function Trades({ trades }) {
 
   const filtered = (trades || []).filter((t) => filter === 'all' || t.type === filter);
   const totalProfit = (trades || [])
-    .filter((t) => t.type === 'sell')
+    .filter((t) => t.type === 'sell' || t.type === 'accept_offer')
     .reduce((s, t) => s + (t.profitEth || 0), 0);
 
   return (
@@ -25,7 +25,7 @@ export default function Trades({ trades }) {
       </div>
 
       <div style={styles.filterRow}>
-        {['all', 'buy', 'sell', 'bid'].map((f) => (
+        {['all', 'buy', 'sell', 'list', 'bid'].map((f) => (
           <button
             key={f}
             style={{ ...styles.filterBtn, ...(filter === f ? styles.filterActive : {}) }}
@@ -57,8 +57,8 @@ export default function Trades({ trades }) {
                   borderRadius: 6,
                   fontSize: 11,
                   fontWeight: 700,
-                  background: t.type === 'buy' ? 'rgba(99,102,241,0.15)' : t.type === 'sell' ? 'rgba(34,197,94,0.15)' : 'rgba(234,179,8,0.15)',
-                  color: t.type === 'buy' ? '#818cf8' : t.type === 'sell' ? '#22c55e' : '#eab308',
+                  background: t.type === 'buy' ? 'rgba(99,102,241,0.15)' : t.type === 'sell' ? 'rgba(34,197,94,0.15)' : t.type === 'list' ? 'rgba(168,85,247,0.15)' : 'rgba(234,179,8,0.15)',
+                  color: t.type === 'buy' ? '#818cf8' : t.type === 'sell' ? '#22c55e' : t.type === 'list' ? '#a855f7' : '#eab308',
                 }}>
                   {t.type?.toUpperCase()}
                 </span>

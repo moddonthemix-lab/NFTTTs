@@ -150,6 +150,15 @@ function removeFromPortfolio(tokenId, contractAddress) {
   writeDb(db);
 }
 
+function updatePortfolioListing(contractAddress, tokenId, updates) {
+  const db = readDb();
+  const item = db.portfolio.find(
+    (n) => n.contractAddress?.toLowerCase() === contractAddress.toLowerCase() && n.tokenId === tokenId
+  );
+  if (item) Object.assign(item, updates);
+  writeDb(db);
+}
+
 // --- Trades ---
 function addTrade(trade) {
   const db = readDb();
@@ -219,7 +228,7 @@ module.exports = {
   getFavorites, addFavorite, removeFavorite,
   getWatchlist, addToWatchlist, removeFromWatchlist,
   getWhales, addWhale, removeWhale,
-  addToPortfolio, removeFromPortfolio,
+  addToPortfolio, removeFromPortfolio, updatePortfolioListing,
   addTrade,
   addBid, removeBid, removeBidByOrderHash,
   addPendingApproval, updateApproval,
