@@ -193,14 +193,24 @@ const GAS_SPEEDS = {
   turbo:  { label: 'Turbo',  desc: 'Max tip — targets next block',             color: '#ef4444' },
 };
 
+/* ─── Scan Interval Options (mirrors backend SCAN_INTERVALS) ─────────────── */
+const SCAN_INTERVAL_OPTIONS = [
+  { ms: 2000,  label: 'Every 2s',  desc: 'Fastest — high API usage' },
+  { ms: 5000,  label: 'Every 5s',  desc: 'Very fast' },
+  { ms: 10000, label: 'Every 10s', desc: 'Fast (default)' },
+  { ms: 30000, label: 'Every 30s', desc: 'Moderate' },
+  { ms: 60000, label: 'Every 1m',  desc: 'Relaxed — low API usage' },
+];
+
 /* ─── Sniper Panel ───────────────────────────────────────────────────────── */
 function SniperPanel({ ethPrice }) {
   const [slug, setSlug]         = useState('');
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const [gasSpeed, setGasSpeed] = useState('normal');
-  const [chain, setChain]       = useState('ethereum');
+  const [gasSpeed, setGasSpeed]           = useState('normal');
+  const [scanIntervalMs, setScanIntervalMs] = useState(10000);
+  const [chain, setChain]                 = useState('ethereum');
   const [busy, setBusy]               = useState(false);
   const [error, setError]             = useState(null);
   const [preview, setPreview]         = useState(null);
@@ -248,7 +258,7 @@ function SniperPanel({ ethPrice }) {
     if (mn > mx) return setError('Min price must be ≤ max price');
     setError(null); setBusy(true);
     try {
-      await sniperApi.arm(s, mn, mx, quantity, gasSpeed, chain);
+      await sniperApi.arm(s, mn, mx, quantity, gasSpeed, scanIntervalMs, chain);
       setSlug(''); setMinPrice(''); setMaxPrice(''); setQuantity(1); setPreview(null);
       await loadSnipers();
     } catch (err) {
@@ -376,32 +386,50 @@ function SniperPanel({ ethPrice }) {
         </div>
       )}
 
-      {/* Gas speed */}
-      <div style={styles.field}>
-        <label style={styles.label}>Gas Speed</label>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {Object.entries(GAS_SPEEDS).map(([key, cfg]) => (
-            <button
-              key={key}
-              onClick={() => setGasSpeed(key)}
-              style={{
-                padding: '8px 14px',
-                borderRadius: 8,
-                border: `2px solid ${gasSpeed === key ? cfg.color : '#334155'}`,
-                background: gasSpeed === key ? `${cfg.color}20` : '#1e293b',
-                color: gasSpeed === key ? cfg.color : '#64748b',
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 700,
-                transition: 'all 0.15s',
-              }}
-              title={cfg.desc}
-            >
-              {cfg.label}
-            </button>
-          ))}
+      {/* Scan interval + Gas speed row */}
+      <div style={styles.row}>
+        <div style={styles.field}>
+          <label style={styles.label}>Scan Interval</label>
+          <select
+            style={{ ...styles.input, width: 150 }}
+            value={scanIntervalMs}
+            onChange={(e) => setScanIntervalMs(parseInt(e.target.value))}
+          >
+            {SCAN_INTERVAL_OPTIONS.map((o) => (
+              <option key={o.ms} value={o.ms}>{o.label}</option>
+            ))}
+          </select>
+          <div style={styles.hint}>
+            {SCAN_INTERVAL_OPTIONS.find((o) => o.ms === scanIntervalMs)?.desc}
+          </div>
         </div>
-        <div style={styles.hint}>{GAS_SPEEDS[gasSpeed].desc}</div>
+
+        <div style={styles.field}>
+          <label style={styles.label}>Gas Speed (on buy)</label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {Object.entries(GAS_SPEEDS).map(([key, cfg]) => (
+              <button
+                key={key}
+                onClick={() => setGasSpeed(key)}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  border: `2px solid ${gasSpeed === key ? cfg.color : '#334155'}`,
+                  background: gasSpeed === key ? `${cfg.color}20` : '#1e293b',
+                  color: gasSpeed === key ? cfg.color : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  transition: 'all 0.15s',
+                }}
+                title={cfg.desc}
+              >
+                {cfg.label}
+              </button>
+            ))}
+          </div>
+          <div style={styles.hint}>{GAS_SPEEDS[gasSpeed].desc}</div>
+        </div>
       </div>
 
       {error && <div style={styles.error}>{error}</div>}
@@ -466,13 +494,13 @@ function useSecondsAgo(isoTimestamp) {
   return secs;
 }
 
-const POLL_MS = { slow: 30000, normal: 10000, fast: 5000, turbo: 2000 };
-
 function SniperRow({ sniper, onCancel, cancelling, fmtUsd }) {
   const statusColor = sniper.status === 'active' ? '#22c55e' : sniper.status === 'filled' ? '#6366f1' : '#475569';
   const fills = sniper.fills || [];
   const secsAgo = useSecondsAgo(sniper.lastCheckedAt);
-  const pollSec = (POLL_MS[sniper.gasSpeed] || 10000) / 1000;
+  const pollMs = sniper.scanIntervalMs || 10000;
+  const pollSec = pollMs / 1000;
+  const intervalLabel = SCAN_INTERVAL_OPTIONS.find((o) => o.ms === pollMs)?.label || `${pollSec}s`;
   const isActive = sniper.status === 'active';
 
   let checkedLabel = null;
@@ -521,7 +549,7 @@ function SniperRow({ sniper, onCancel, cancelling, fmtUsd }) {
       </div>
       {checkedLabel && (
         <div style={{ fontSize: 11, color: checkedLabel.color, fontFamily: 'JetBrains Mono, monospace' }}>
-          ⟳ {checkedLabel.text} · polls every {pollSec}s
+          ⟳ {checkedLabel.text} · {intervalLabel}
         </div>
       )}
       {fills.length > 0 && (

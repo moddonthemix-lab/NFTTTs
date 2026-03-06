@@ -728,7 +728,7 @@ app.get('/api/snipers', (req, res) => {
 
 app.post('/api/snipers', (req, res) => {
   try {
-    const { collectionSlug, minPriceEth, maxPriceEth, quantity = 1, gasSpeed = 'normal', chain = 'ethereum' } = req.body;
+    const { collectionSlug, minPriceEth, maxPriceEth, quantity = 1, gasSpeed = 'normal', scanIntervalMs = 10000, chain = 'ethereum' } = req.body;
     if (!collectionSlug || minPriceEth == null || maxPriceEth == null) {
       return res.status(400).json({ error: 'collectionSlug, minPriceEth, maxPriceEth required' });
     }
@@ -741,6 +741,7 @@ app.post('/api/snipers', (req, res) => {
       maxPriceEth: parseFloat(maxPriceEth),
       quantity: Math.max(1, parseInt(quantity) || 1),
       gasSpeed: sniperService.GAS_SPEEDS[gasSpeed] ? gasSpeed : 'normal',
+      scanIntervalMs: sniperService.SCAN_INTERVALS[parseInt(scanIntervalMs)] ? parseInt(scanIntervalMs) : 10000,
       chain,
     });
     sniperService.arm(sniper);

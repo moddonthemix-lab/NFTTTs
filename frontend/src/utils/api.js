@@ -65,8 +65,8 @@ export const tradesApi = {
 
 export const sniperApi = {
   get: () => api.get('/snipers').then((r) => r.data),
-  arm: (collectionSlug, minPriceEth, maxPriceEth, quantity, gasSpeed, chain) =>
-    api.post('/snipers', { collectionSlug, minPriceEth, maxPriceEth, quantity, gasSpeed, chain }).then((r) => r.data),
+  arm: (collectionSlug, minPriceEth, maxPriceEth, quantity, gasSpeed, scanIntervalMs, chain) =>
+    api.post('/snipers', { collectionSlug, minPriceEth, maxPriceEth, quantity, gasSpeed, scanIntervalMs, chain }).then((r) => r.data),
   cancel: (id) => api.delete(`/snipers/${id}`).then((r) => r.data),
 };
 

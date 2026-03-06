@@ -20,13 +20,21 @@ const logger      = require('../utils/logger');
 const { weiToEth } = require('../analyzer/scorer');
 
 // ─── Gas speed configs ────────────────────────────────────────────────────────
-// priorityGwei = miner tip (maxPriorityFeePerGas)
-// Larger tip = higher chance of next-block inclusion
+// priorityGwei = miner tip (maxPriorityFeePerGas) — affects tx inclusion speed only
 const GAS_SPEEDS = {
-  slow:   { label: 'Slow',   desc: 'Low gas — may lag in congestion',         pollMs: 30000, priorityGwei: 0.5  },
-  normal: { label: 'Normal', desc: 'Standard — usually confirms within 1 min', pollMs: 10000, priorityGwei: 1.5  },
-  fast:   { label: 'Fast',   desc: 'Higher tip — fast next-few-block confirm', pollMs: 5000,  priorityGwei: 4.0  },
-  turbo:  { label: 'Turbo',  desc: 'Max tip — targets next block',             pollMs: 2000,  priorityGwei: 15.0 },
+  slow:   { label: 'Slow',   desc: 'Low gas — may lag in congestion',          priorityGwei: 0.5  },
+  normal: { label: 'Normal', desc: 'Standard — usually confirms within 1 min',  priorityGwei: 1.5  },
+  fast:   { label: 'Fast',   desc: 'Higher tip — fast next-few-block confirm',  priorityGwei: 4.0  },
+  turbo:  { label: 'Turbo',  desc: 'Max tip — targets next block',              priorityGwei: 15.0 },
+};
+
+// ─── Scan interval presets ────────────────────────────────────────────────────
+const SCAN_INTERVALS = {
+  2000:  { label: 'Every 2s',  desc: 'Fastest — high API usage' },
+  5000:  { label: 'Every 5s',  desc: 'Very fast' },
+  10000: { label: 'Every 10s', desc: 'Fast (default)' },
+  30000: { label: 'Every 30s', desc: 'Moderate' },
+  60000: { label: 'Every 1m',  desc: 'Relaxed — low API usage' },
 };
 
 function gasOverrideFor(speed) {
@@ -101,10 +109,15 @@ function _clearTimer(id) {
   if (t) { clearTimeout(t); _timers.delete(id); }
 }
 
+function _pollMs(sniper) {
+  // scanIntervalMs is the explicit user setting; falls back to 10s
+  const ms = parseInt(sniper.scanIntervalMs) || 10000;
+  return SCAN_INTERVALS[ms] ? ms : 10000;
+}
+
 function _schedule(sniper) {
   _clearTimer(sniper.id);
-  const pollMs = (GAS_SPEEDS[sniper.gasSpeed] || GAS_SPEEDS.normal).pollMs;
-  _timers.set(sniper.id, setTimeout(() => _tick(sniper), pollMs));
+  _timers.set(sniper.id, setTimeout(() => _tick(sniper), _pollMs(sniper)));
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -133,4 +146,4 @@ function start() {
   active.forEach((s) => arm(s));
 }
 
-module.exports = { start, setEmitter, arm, cancel, GAS_SPEEDS };
+module.exports = { start, setEmitter, arm, cancel, GAS_SPEEDS, SCAN_INTERVALS };
