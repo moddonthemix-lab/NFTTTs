@@ -70,4 +70,47 @@ async function mintNFT(contractAddress, quantity = 1, pricePerNftEth = 0, chain 
   );
 }
 
-module.exports = { mintNFT };
+const ERC721_ABI = [
+  'function safeTransferFrom(address from, address to, uint256 tokenId)',
+  'function supportsInterface(bytes4 interfaceId) view returns (bool)',
+];
+const ERC1155_ABI = [
+  'function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)',
+];
+const ERC1155_INTERFACE = '0xd9b67a26';
+
+/**
+ * Transfer an NFT (ERC-721 or ERC-1155) from the configured wallet to a recipient.
+ *
+ * @param {string} contractAddress  - NFT contract
+ * @param {string} tokenId          - Token ID (string or number)
+ * @param {string} toAddress        - Recipient wallet address
+ * @param {string} chain            - 'ethereum' | 'base'
+ * @returns {{ txHash: string, contractAddress, tokenId, to: string }}
+ */
+async function sendNFT(contractAddress, tokenId, toAddress, chain = 'ethereum') {
+  const wallet = walletUtils.getWalletForChain(chain);
+  if (!wallet) throw new Error('No wallet connected');
+  if (!ethers.isAddress(toAddress)) throw new Error('Invalid recipient address');
+
+  // Detect ERC-1155 vs ERC-721
+  let is1155 = false;
+  try {
+    const probe = new ethers.Contract(contractAddress, ERC721_ABI, wallet);
+    is1155 = await probe.supportsInterface(ERC1155_INTERFACE).catch(() => false);
+  } catch { /* assume 721 */ }
+
+  let tx;
+  if (is1155) {
+    const contract = new ethers.Contract(contractAddress, ERC1155_ABI, wallet);
+    tx = await contract.safeTransferFrom(wallet.address, toAddress, BigInt(tokenId), 1n, '0x');
+  } else {
+    const contract = new ethers.Contract(contractAddress, ERC721_ABI, wallet);
+    tx = await contract.safeTransferFrom(wallet.address, toAddress, BigInt(tokenId));
+  }
+  await tx.wait(1);
+  logger.info(`[send] Sent token ${tokenId} from ${contractAddress} to ${toAddress} — tx ${tx.hash}`);
+  return { txHash: tx.hash, contractAddress, tokenId, to: toAddress };
+}
+
+module.exports = { mintNFT, sendNFT };

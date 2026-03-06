@@ -24,13 +24,13 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
 
   const isWatched = (slug) => watchlist.some((w) => w.slug === slug);
 
-  const handleToggleWatch = async (slug, name, image) => {
+  const handleToggleWatch = async (slug, name, image, chain = 'ethereum') => {
     if (isWatched(slug)) {
       await watchlistApi.remove(slug).catch(() => {});
       setWatchlist((prev) => prev.filter((w) => w.slug !== slug));
     } else {
-      await watchlistApi.add(slug, name, image).catch(() => {});
-      setWatchlist((prev) => [...prev, { slug, name, imageUrl: image }]);
+      await watchlistApi.add(slug, name, image, chain).catch(() => {});
+      setWatchlist((prev) => [...prev, { slug, name, imageUrl: image, chain }]);
     }
   };
 
@@ -255,13 +255,13 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
       <div style={styles.header}>
         <div>
           <h1 style={styles.h1}>Scanner</h1>
-          <p style={styles.sub}>Live OpenSea opportunity scanner</p>
+          <p style={styles.sub}>
+            Live OpenSea opportunity scanner
+            {scanning && <span style={{ marginLeft: 10, color: '#f59e0b', fontSize: 12 }}>
+              <span className="animate-spin" style={{ display: 'inline-block', marginRight: 4 }}>⟳</span>Scanning…
+            </span>}
+          </p>
         </div>
-        <button style={styles.btnScan} onClick={handleScanNow} disabled={scanning}>
-          {scanning ? (
-            <><span className="animate-spin" style={{ display: 'inline-block' }}>⟳</span> Scanning...</>
-          ) : '⊕ Run Scan'}
-        </button>
       </div>
 
       {/* Search */}
@@ -339,13 +339,14 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                     </button>
                     <button
                       style={watched ? styles.btnGroupUnwatch : styles.btnGroupWatch}
-                      onClick={() => handleToggleWatch(slug, col.name, col.image_url)}
+                      onClick={() => handleToggleWatch(slug, col.name, col.image_url, col.chain || searchChain)}
                       title={watched ? 'Remove from snipe list' : 'Add to snipe list'}
                     >
                       {watched ? '★' : '☆'}
                     </button>
                   </div>
                 </div>
+
               );
             })}
           </div>
@@ -454,7 +455,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
 
       {!scanning && sorted.length === 0 && (
         <div style={styles.empty}>
-          No opportunities found. Click "Run Scan" to search for NFTs to flip.
+          No opportunities yet — auto-scan runs every 2.5 min. Start the bot for faster continuous scanning.
         </div>
       )}
 

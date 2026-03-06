@@ -101,8 +101,12 @@ export const statsApi = {
 
 export const watchlistApi = {
   get: () => api.get('/watchlist').then((r) => r.data),
-  add: (slug, name, imageUrl) => api.post('/watchlist', { slug, name, imageUrl }).then((r) => r.data),
+  add: (slug, name, imageUrl, chain = 'ethereum') => api.post('/watchlist', { slug, name, imageUrl, chain }).then((r) => r.data),
   remove: (slug) => api.delete(`/watchlist/${slug}`).then((r) => r.data),
+};
+
+export const senderApi = {
+  send: (transfers, toAddress) => api.post('/send', { transfers, toAddress }).then((r) => r.data),
 };
 
 export const whaleApi = {

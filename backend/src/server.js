@@ -15,7 +15,7 @@ const openSeaApi = require('./scanner/openSeaApi');
 const { getEthPriceUsd } = openSeaApi;
 const botEngine = require('./trader/botEngine');
 const { buyNFT, placeBid, sellNFT, acceptBestOffer, cancelOrder, getDiagnostics } = require('./trader/seaportTrader');
-const { mintNFT } = require('./trader/mintTrader');
+const { mintNFT, sendNFT } = require('./trader/mintTrader');
 const sniperService = require('./trader/sniperService');
 const { weiToEth } = require('./analyzer/scorer');
 
@@ -522,6 +522,35 @@ app.post('/api/mint', async (req, res) => {
   }
 });
 
+// --- Send NFT(s) ---
+// Body: { transfers: [{ contractAddress, tokenId, chain? }], toAddress }
+// Sends up to 20 tokens sequentially; returns per-token results.
+app.post('/api/send', async (req, res) => {
+  try {
+    if (!walletUtils.isConnected()) return res.status(400).json({ error: 'Wallet not connected' });
+    const { transfers, toAddress } = req.body;
+    if (!toAddress || !/^0x[a-fA-F0-9]{40}$/.test(toAddress))
+      return res.status(400).json({ error: 'Valid recipient address required' });
+    if (!Array.isArray(transfers) || transfers.length === 0)
+      return res.status(400).json({ error: 'transfers array required' });
+    if (transfers.length > 20)
+      return res.status(400).json({ error: 'Maximum 20 NFTs per send batch' });
+
+    const results = [];
+    for (const t of transfers) {
+      try {
+        const r = await sendNFT(t.contractAddress, String(t.tokenId), toAddress, t.chain || 'ethereum');
+        results.push({ ...r, status: 'ok' });
+      } catch (err) {
+        results.push({ contractAddress: t.contractAddress, tokenId: t.tokenId, status: 'error', error: err.message });
+      }
+    }
+    res.json({ results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Snipe Floor (buy single cheapest listing) ---
 app.post('/api/trade/snipe/:slug', async (req, res) => {
   const { slug } = req.params;
@@ -661,9 +690,9 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/watchlist', (req, res) => res.json(db.getWatchlist(wa())));
 
 app.post('/api/watchlist', (req, res) => {
-  const { slug, name, imageUrl } = req.body;
+  const { slug, name, imageUrl, chain } = req.body;
   if (!slug) return res.status(400).json({ error: 'slug required' });
-  db.addToWatchlist(wa(), { slug, name, imageUrl });
+  db.addToWatchlist(wa(), { slug, name, imageUrl, chain: chain || 'ethereum' });
   res.json({ success: true });
 });
 
