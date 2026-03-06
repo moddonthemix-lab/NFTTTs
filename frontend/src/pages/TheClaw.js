@@ -120,7 +120,7 @@ function MintPanel({ ethPrice }) {
   // When phase changes, pre-fill price from phase data
   useEffect(() => {
     if (selectedPhase) setPrice(selectedPhase.mintPriceEth > 0 ? String(selectedPhase.mintPriceEth) : '');
-  }, [selectedStage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedStage]);
 
   const handleMint = async () => {
     const contractAddr = drop?.contractAddress;
