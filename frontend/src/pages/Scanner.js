@@ -162,6 +162,10 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
           image: opp.collectionImage,
           floorPriceEth: opp.floorPriceEth,
           oneDayVolume: opp.oneDayVolume,
+          oneDayChange: opp.oneDayChange,
+          oneHourChange: opp.oneHourChange,
+          totalSupply: opp.totalSupply,
+          numOwners: opp.numOwners,
           chain: opp.chain || 'ethereum',
           listings: [],
         });
@@ -465,7 +469,12 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
           const best = group.listings[0];
           const bestGrade = best?.dealGrade || (best?.score >= 75 ? 'A' : best?.score >= 55 ? 'B' : best?.score >= 35 ? 'C' : best?.score >= 20 ? 'D' : 'F');
           const gradeColor = { A: '#22c55e', B: '#3b82f6', C: '#eab308', D: '#f97316', F: '#ef4444' }[bestGrade] || '#94a3b8';
-          const dayChange = best?.oneDayChange || 0;
+          const fmtChange = (v) => v != null ? (
+            <span style={{ color: v > 0 ? '#22c55e' : v < 0 ? '#ef4444' : '#64748b' }}>
+              {v > 0 ? '▲' : v < 0 ? '▼' : ''}{Math.abs(v * 100).toFixed(0)}%
+            </span>
+          ) : null;
+          const fmtCount = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
           return (
             <div key={group.slug} style={styles.groupWrapper}>
               {/* Collection header / toggle */}
@@ -483,17 +492,21 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                     <div style={styles.groupMeta} className="mono">
                       Floor {group.floorPriceEth?.toFixed(4)} ETH
                       {ethPrice && group.floorPriceEth ? ` (${fmtUsd(group.floorPriceEth, ethPrice)})` : ''}
-                      &nbsp;·&nbsp; Vol {(group.oneDayVolume || 0).toFixed(2)} ETH
-                      {dayChange !== 0 && (
-                        <span style={{ marginLeft: 6, color: dayChange > 0 ? '#22c55e' : '#ef4444' }}>
-                          {dayChange > 0 ? '▲' : '▼'}{Math.abs(dayChange * 100).toFixed(0)}%
-                        </span>
-                      )}
+                      &nbsp;·&nbsp;
+                      Vol {(group.oneDayVolume || 0).toFixed(2)} ETH
+                      {group.oneDayChange != null && <>&nbsp;{fmtChange(group.oneDayChange)}</>}
+                      {group.totalSupply != null && <>&nbsp;·&nbsp;{fmtCount(group.totalSupply)} items</>}
+                      {group.numOwners  != null && <>&nbsp;·&nbsp;{fmtCount(group.numOwners)} holders</>}
                     </div>
                     {group.floorPriceEth > 0 && (
                       <div style={styles.groupEst}>
                         Est. {(group.floorPriceEth * group.listings.length).toFixed(3)} ETH
                         {ethPrice ? ` (${fmtUsd(group.floorPriceEth * group.listings.length, ethPrice)})` : ''}
+                        {group.oneHourChange != null && (
+                          <span style={{ marginLeft: 8, color: '#64748b', fontSize: 10 }}>
+                            1h {fmtChange(group.oneHourChange)}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>

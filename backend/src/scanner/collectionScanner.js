@@ -90,6 +90,8 @@ async function scanForOpportunities() {
         const sevenDayInterval = stats.intervals?.find((i) => i.interval === 'seven_day') || {};
         const oneHourInterval = stats.intervals?.find((i) => i.interval === 'one_hour') || {};
         const oneDayVolume = oneDayInterval.volume || 0;
+        const totalSupply = stats.total?.count || null;
+        const numOwners   = stats.total?.num_owners || null;
         // Realistic exit = avg sale price (what buyers pay), not floor (cheapest ask)
         const avgSalePrice =
           oneDayInterval.average_price ||
@@ -153,8 +155,10 @@ async function scanForOpportunities() {
             flipEstimate,
             oneDayVolume,
             oneDaySales: oneDayInterval.sales || 0,
-            oneDayChange: oneDayInterval.volume_change || 0,
-            oneHourChange,
+            oneDayChange: oneDayInterval.volume_change || null,
+            oneHourChange: oneHourInterval.volume_change || null,
+            totalSupply,
+            numOwners,
             isWatchlisted,
             listing,
             scannedAt: new Date().toISOString(),
