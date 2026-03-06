@@ -56,27 +56,80 @@ function ModeCard({ label, icon, desc, color, active, onClick }) {
   );
 }
 
+/* ─── Phase status helpers ───────────────────────────────────────────────── */
+const PHASE_STATUS_COLOR = { active: '#22c55e', upcoming: '#f59e0b', ended: '#475569' };
+const PHASE_STATUS_LABEL = { active: 'LIVE', upcoming: 'UPCOMING', ended: 'ENDED' };
+
+function EligibilityBadge({ eligible, isPublic }) {
+  if (isPublic) return <span style={mintBadge('#22c55e')}>PUBLIC</span>;
+  if (eligible === true)  return <span style={mintBadge('#6366f1')}>ELIGIBLE</span>;
+  if (eligible === false) return <span style={mintBadge('#ef4444')}>NOT ELIGIBLE</span>;
+  return <span style={mintBadge('#64748b')}>ALLOWLIST</span>;
+}
+
+function mintBadge(color) {
+  return {
+    display: 'inline-block', padding: '1px 7px', borderRadius: 5, fontSize: 10,
+    fontWeight: 700, background: `${color}22`, color, border: `1px solid ${color}55`,
+    marginLeft: 6,
+  };
+}
+
 /* ─── Mint Panel ─────────────────────────────────────────────────────────── */
 function MintPanel({ ethPrice }) {
-  const [contract, setContract]   = useState('');
-  const [quantity, setQuantity]   = useState(1);
-  const [price, setPrice]         = useState('');
-  const [chain, setChain]         = useState('ethereum');
-  const [calldata, setCalldata]   = useState('');
-  const [advanced, setAdvanced]   = useState(false);
-  const [busy, setBusy]           = useState(false);
-  const [result, setResult]       = useState(null);
-  const [error, setError]         = useState(null);
+  // Drop lookup
+  const [dropInput, setDropInput]   = useState('');
+  const [chain, setChain]           = useState('ethereum');
+  const [drop, setDrop]             = useState(null);       // fetched drop info
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupErr, setLookupErr]   = useState(null);
 
-  const totalEth = (parseFloat(price) || 0) * quantity;
+  // Selected phase → mint form
+  const [selectedStage, setSelectedStage] = useState('');
+  const [quantity, setQuantity]           = useState(1);
+  const [price, setPrice]                 = useState('');   // editable, pre-filled from phase
+  const [calldata, setCalldata]           = useState('');
+  const [advanced, setAdvanced]           = useState(false);
+
+  // Mint execution
+  const [busy, setBusy]     = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError]   = useState(null);
+
   const fmtUsd = (eth) => ethPrice && eth > 0 ? ` ≈ $${(eth * ethPrice).toFixed(2)}` : '';
+  const totalEth = (parseFloat(price) || 0) * quantity;
+
+  const selectedPhase = drop?.phases?.find((p) => p.stage === selectedStage) || null;
+
+  const handleLookup = async () => {
+    if (!dropInput.trim()) return;
+    setLookupErr(null); setDrop(null); setSelectedStage(''); setResult(null); setError(null);
+    setLookupBusy(true);
+    try {
+      const d = await mintApi.getDropPhases(dropInput.trim(), chain);
+      setDrop(d);
+      // Auto-select the first active phase, then first phase overall
+      const active = d.phases?.find((p) => p.status === 'active');
+      setSelectedStage(active?.stage || d.phases?.[0]?.stage || '');
+    } catch (err) {
+      setLookupErr(err.response?.data?.error || err.message);
+    }
+    setLookupBusy(false);
+  };
+
+  // When phase changes, pre-fill price from phase data
+  useEffect(() => {
+    if (selectedPhase) setPrice(selectedPhase.mintPriceEth > 0 ? String(selectedPhase.mintPriceEth) : '');
+  }, [selectedStage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMint = async () => {
-    if (!contract || !/^0x[a-fA-F0-9]{40}$/.test(contract)) return setError('Enter a valid contract address (0x...)');
+    const contractAddr = drop?.contractAddress;
+    if (!contractAddr || !/^0x[a-fA-F0-9]{40}$/.test(contractAddr))
+      return setError('No valid contract address — look up a drop first');
     if (quantity < 1 || quantity > 50) return setError('Quantity must be between 1 and 50');
     setError(null); setResult(null); setBusy(true);
     try {
-      const res = await mintApi.mint(contract, quantity, parseFloat(price) || 0, chain, calldata || null);
+      const res = await mintApi.mint(contractAddr, quantity, parseFloat(price) || 0, drop.chain || chain, calldata || null);
       setResult(res);
     } catch (err) {
       setError(err.response?.data?.error || err.message);
@@ -90,97 +143,211 @@ function MintPanel({ ethPrice }) {
         <span style={{ color: '#6366f1' }}>✦</span> Mint NFTs
       </div>
 
+      {/* ── Step 1: Drop lookup ── */}
       <div style={styles.field}>
-        <label style={styles.label}>Contract Address</label>
-        <input
-          style={styles.input}
-          placeholder="0x..."
-          value={contract}
-          onChange={(e) => setContract(e.target.value.trim())}
-        />
-      </div>
-
-      <div style={styles.row}>
-        <div style={styles.field}>
-          <label style={styles.label}>Quantity</label>
+        <label style={styles.label}>Collection slug or OpenSea URL</label>
+        <div style={{ display: 'flex', gap: 8 }}>
           <input
-            style={{ ...styles.input, width: 90 }}
-            type="number"
-            min={1}
-            max={50}
-            value={quantity}
-            onChange={(e) => setQuantity(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+            style={{ ...styles.input, flex: 1 }}
+            placeholder="boredapeyachtclub  or  opensea.io/collection/…"
+            value={dropInput}
+            onChange={(e) => setDropInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
           />
-        </div>
-        <div style={styles.field}>
-          <label style={styles.label}>Price per NFT (ETH)</label>
-          <input
-            style={{ ...styles.input, width: 160 }}
-            type="number"
-            step="0.001"
-            min="0"
-            placeholder="0.00 (free)"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-        </div>
-        <div style={styles.field}>
-          <label style={styles.label}>Chain</label>
           <select
-            style={{ ...styles.input, width: 130 }}
+            style={{ ...styles.input, width: 120 }}
             value={chain}
             onChange={(e) => setChain(e.target.value)}
           >
             <option value="ethereum">Ethereum</option>
             <option value="base">Base</option>
           </select>
+          <button
+            style={{ ...styles.actionBtn, background: '#334155', minWidth: 90, padding: '0 16px' }}
+            onClick={handleLookup}
+            disabled={lookupBusy || !dropInput.trim()}
+          >
+            {lookupBusy ? 'Loading…' : 'Look Up'}
+          </button>
         </div>
+        <div style={styles.hint}>Paste an OpenSea collection URL or just the slug (e.g. <code>azuki</code>)</div>
       </div>
 
-      {totalEth > 0 && (
-        <div style={styles.totalRow}>
-          Total: <strong>{totalEth.toFixed(6)} ETH</strong>
-          <span style={{ color: '#64748b' }}>{fmtUsd(totalEth)}</span>
-        </div>
-      )}
+      {lookupErr && <div style={styles.error}>{lookupErr}</div>}
 
-      <button
-        style={{ ...styles.advancedToggle }}
-        onClick={() => setAdvanced((v) => !v)}
-      >
-        {advanced ? '▲ Hide' : '▼ Advanced'} (custom calldata)
-      </button>
-
-      {advanced && (
-        <div style={styles.field}>
-          <label style={styles.label}>Custom calldata (hex, overrides auto-detect)</label>
-          <input
-            style={{ ...styles.input, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}
-            placeholder="0x... (leave blank to auto-detect mint function)"
-            value={calldata}
-            onChange={(e) => setCalldata(e.target.value.trim())}
-          />
-          <div style={styles.hint}>
-            e.g. <code>0x1249c58b</code> for <code>mint()</code>. Only needed if auto-detect fails.
+      {/* ── Step 2: Phase selector ── */}
+      {drop && (
+        <>
+          {/* Drop header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+                        padding: '10px 14px', background: '#0f172a', borderRadius: 10, border: '1px solid #1e293b' }}>
+            {drop.imageUrl && (
+              <img src={drop.imageUrl} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover' }} />
+            )}
+            <div>
+              <div style={{ fontWeight: 700, color: '#f1f5f9', fontSize: 15 }}>{drop.name}</div>
+              <div style={{ fontSize: 11, color: '#64748b', fontFamily: 'JetBrains Mono, monospace' }}>
+                {drop.contractAddress || 'contract TBD'} · {drop.contractType}
+              </div>
+            </div>
           </div>
-        </div>
+
+          <div style={styles.field}>
+            <label style={styles.label}>
+              Mint Phase
+              {drop.phases?.length > 0 && (
+                <span style={{ color: '#64748b', fontWeight: 400, marginLeft: 6 }}>
+                  ({drop.phases.length} phase{drop.phases.length !== 1 ? 's' : ''})
+                </span>
+              )}
+            </label>
+
+            {drop.phases?.length === 0 ? (
+              <div style={{ color: '#64748b', fontSize: 13 }}>No phases found for this drop.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {drop.phases.map((phase) => {
+                  const isSelected = phase.stage === selectedStage;
+                  const statusColor = PHASE_STATUS_COLOR[phase.status] || '#64748b';
+                  return (
+                    <button
+                      key={phase.stage}
+                      onClick={() => setSelectedStage(phase.stage)}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                        border: `2px solid ${isSelected ? '#6366f1' : '#1e293b'}`,
+                        background: isSelected ? 'rgba(99,102,241,0.08)' : '#0f172a',
+                        textAlign: 'left', width: '100%',
+                      }}
+                    >
+                      <div>
+                        <span style={{ fontWeight: 700, color: '#f1f5f9', fontSize: 13 }}>{phase.title}</span>
+                        <EligibilityBadge eligible={phase.eligible} isPublic={phase.isPublic} />
+                        <span style={{ ...mintBadge(statusColor), marginLeft: 6 }}>
+                          {PHASE_STATUS_LABEL[phase.status] || phase.status}
+                        </span>
+                        {phase.maxPerWallet && (
+                          <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>
+                            max {phase.maxPerWallet}/wallet
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
+                        <span style={{ fontWeight: 700, color: '#f1f5f9', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>
+                          {phase.mintPriceEth > 0 ? `${phase.mintPriceEth} ETH` : 'FREE'}
+                        </span>
+                        {phase.startDate && (
+                          <div style={{ fontSize: 10, color: '#64748b' }}>
+                            {phase.status === 'upcoming' ? 'Starts ' : phase.status === 'ended' ? 'Ended ' : 'Started '}
+                            {new Date(phase.startDate).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
-      {error && <div style={styles.error}>{error}</div>}
+      {/* ── Step 3: Mint form (only once drop + phase are chosen) ── */}
+      {(drop || !drop) && (
+        <>
+          {!drop && (
+            <div style={styles.field}>
+              <label style={styles.label}>Contract Address <span style={{ color: '#64748b', fontWeight: 400 }}>(or look up a drop above)</span></label>
+              <input
+                style={styles.input}
+                placeholder="0x... paste directly if you know it"
+                value={drop?.contractAddress || ''}
+                readOnly={!!drop}
+                onChange={() => {}}
+              />
+            </div>
+          )}
 
-      {result && (
-        <div style={styles.success}>
-          Minted! TX: <span className="mono" style={{ color: '#818cf8' }}>{result.txHash.slice(0, 18)}…</span>
-        </div>
+          <div style={styles.row}>
+            <div style={styles.field}>
+              <label style={styles.label}>Quantity</label>
+              <input
+                style={{ ...styles.input, width: 90 }}
+                type="number" min={1} max={50}
+                value={quantity}
+                onChange={(e) => setQuantity(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+              />
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>Price per NFT (ETH)</label>
+              <input
+                style={{ ...styles.input, width: 160 }}
+                type="number" step="0.001" min="0"
+                placeholder={selectedPhase?.mintPriceEth > 0 ? String(selectedPhase.mintPriceEth) : '0.00 (free)'}
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {totalEth > 0 && (
+            <div style={styles.totalRow}>
+              Total: <strong>{totalEth.toFixed(6)} ETH</strong>
+              <span style={{ color: '#64748b' }}>{fmtUsd(totalEth)}</span>
+            </div>
+          )}
+
+          <button style={styles.advancedToggle} onClick={() => setAdvanced((v) => !v)}>
+            {advanced ? '▲ Hide' : '▼ Advanced'} (custom calldata)
+          </button>
+
+          {advanced && (
+            <div style={styles.field}>
+              <label style={styles.label}>Custom calldata (hex)</label>
+              <input
+                style={{ ...styles.input, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}
+                placeholder="0x... (leave blank to auto-detect)"
+                value={calldata}
+                onChange={(e) => setCalldata(e.target.value.trim())}
+              />
+              <div style={styles.hint}>Only needed if auto-detect fails.</div>
+            </div>
+          )}
+
+          {error  && <div style={styles.error}>{error}</div>}
+          {result && (
+            <div style={styles.success}>
+              Minted! TX: <span className="mono" style={{ color: '#818cf8' }}>{result.txHash.slice(0, 18)}…</span>
+            </div>
+          )}
+
+          <button
+            style={{
+              ...styles.actionBtn,
+              background: selectedPhase?.eligible === false ? '#475569' : '#6366f1',
+              opacity: selectedPhase?.eligible === false ? 0.7 : 1,
+            }}
+            onClick={handleMint}
+            disabled={busy}
+            title={selectedPhase?.eligible === false ? 'Your wallet is not on the allowlist for this phase' : undefined}
+          >
+            {busy ? 'Minting…' : `✦ Mint ${quantity > 1 ? `${quantity}x ` : ''}${selectedPhase ? `— ${selectedPhase.title}` : 'Now'}`}
+          </button>
+
+          {selectedPhase?.eligible === false && (
+            <div style={{ ...styles.hint, color: '#ef4444', marginTop: 6 }}>
+              Your wallet is not eligible for this phase. Select a public phase or one you're whitelisted for.
+            </div>
+          )}
+
+          {!drop && (
+            <div style={styles.footNote}>
+              Auto-detects common mint functions. Use "Look Up" above to load drop phases automatically.
+            </div>
+          )}
+        </>
       )}
-
-      <button style={{ ...styles.actionBtn, background: '#6366f1' }} onClick={handleMint} disabled={busy}>
-        {busy ? 'Minting…' : `✦ Mint ${quantity > 1 ? `${quantity}x ` : ''}Now`}
-      </button>
-
-      <div style={styles.footNote}>
-        Auto-detects common mint functions: <code>mint(uint256)</code>, <code>publicMint(uint256)</code>, <code>mint(address, uint256)</code>, and more.
-      </div>
     </div>
   );
 }

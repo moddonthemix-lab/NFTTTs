@@ -475,6 +475,21 @@ app.delete('/api/favorites/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// --- Mint: fetch drop phases + wallet eligibility ---
+app.get('/api/mint/drop', async (req, res) => {
+  try {
+    const { input, chain = 'ethereum' } = req.query;
+    if (!input) return res.status(400).json({ error: 'input (slug or OpenSea URL) required' });
+    const walletInfo = await walletUtils.getWalletInfo();
+    const walletAddress = walletInfo?.address || null;
+    const drop = await openSeaApi.getDropInfo(input, walletAddress, chain);
+    res.json(drop);
+  } catch (err) {
+    logger.error(`getDropInfo error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Mint ---
 app.post('/api/mint', async (req, res) => {
   try {

@@ -51,6 +51,8 @@ export const portfolioApi = {
 export const mintApi = {
   mint: (contractAddress, quantity, pricePerNftEth, chain = 'ethereum', customCalldata = null) =>
     api.post('/mint', { contractAddress, quantity, pricePerNftEth, chain, customCalldata }).then((r) => r.data),
+  getDropPhases: (input, chain = 'ethereum') =>
+    api.get('/mint/drop', { params: { input, chain } }).then((r) => r.data),
 };
 
 export const tradesApi = {

@@ -395,7 +395,105 @@ function clearFeesCache() {
   _feesCache.clear();
 }
 
+/**
+ * Parse an OpenSea URL or bare slug into a collection slug.
+ * Handles:
+ *   - https://opensea.io/collection/boredapeyachtclub
+ *   - https://opensea.io/collection/boredapeyachtclub/drop
+ *   - boredapeyachtclub  (bare slug)
+ */
+function parseSlug(input) {
+  const s = (input || '').trim();
+  const m = s.match(/opensea\.io\/collection\/([^/?#]+)/);
+  if (m) return m[1].toLowerCase();
+  // bare slug or unknown URL — just return cleaned string
+  return s.toLowerCase().replace(/^https?:\/\/[^/]+\/?/, '').replace(/^collection\//, '').split(/[/?#]/)[0];
+}
+
+/**
+ * Fetch drop phases for a collection and check wallet eligibility per phase.
+ * walletAddress is optional — when provided, each phase gets an `eligible` field.
+ * Returns { drop, phases } where phases is an array enriched with:
+ *   - eligible: true | false | null (null = public phase or unknown)
+ *   - mintPriceEth: number
+ *   - status: 'upcoming' | 'active' | 'ended'
+ */
+async function getDropInfo(slugOrUrl, walletAddress = null, chain = 'ethereum') {
+  const slug = parseSlug(slugOrUrl);
+  if (!slug) throw new Error('Invalid collection slug or URL');
+
+  const drop = await rateLimitedCall(async () => {
+    const res = await api.get(`/drops/${slug}`);
+    return res.data;
+  });
+
+  const rawPhases = drop.drop_stages || drop.phases || drop.drop_phases || [];
+  const now = Date.now();
+
+  const phases = await Promise.all(rawPhases.map(async (phase) => {
+    const startMs = phase.start_date ? new Date(phase.start_date).getTime() : null;
+    const endMs   = phase.end_date   ? new Date(phase.end_date).getTime()   : null;
+    const status  = endMs && endMs < now
+      ? 'ended'
+      : startMs && startMs > now
+        ? 'upcoming'
+        : 'active';
+
+    // mint_price can be in wei (string/number) or already in ETH (small float)
+    let mintPriceEth = 0;
+    if (phase.mint_price != null) {
+      const raw = String(phase.mint_price);
+      // if it looks like a large integer (wei) convert it
+      mintPriceEth = raw.length >= 10
+        ? parseFloat((BigInt(raw) * BigInt(1e6) / BigInt('1000000000000000000')).toString()) / 1e6
+        : parseFloat(raw) || 0;
+    }
+
+    let eligible = phase.is_public ? true : null;
+
+    // Check allowlist eligibility for gated phases
+    if (!phase.is_public && walletAddress && status !== 'ended') {
+      try {
+        const r = await rateLimitedCall(() =>
+          api.get(`/drops/${slug}/phases/${phase.stage}/allowlist`, {
+            params: { wallet_address: walletAddress },
+          })
+        );
+        eligible = r.data?.is_eligible ?? (r.data?.entries?.length > 0) ?? null;
+      } catch {
+        eligible = null; // unknown — API doesn't support it or phase has no allowlist endpoint
+      }
+    }
+
+    return {
+      stage:               phase.stage,
+      title:               phase.title || phase.stage || 'Phase',
+      startDate:           phase.start_date || null,
+      endDate:             phase.end_date   || null,
+      mintPriceEth,
+      maxPerWallet:        phase.max_tokens_per_address || null,
+      isPublic:            !!phase.is_public,
+      allowlistEntries:    phase.allowlist_entries || null,
+      status,
+      eligible,
+    };
+  }));
+
+  return {
+    slug,
+    name:            drop.name || slug,
+    contractAddress: drop.primary_contract || drop.contract || null,
+    contractType:    drop.contract_type || 'ERC721',
+    chain:           drop.chain || chain,
+    imageUrl:        drop.image_url || null,
+    totalSupply:     drop.total_supply || null,
+    phases,
+  };
+}
+
 module.exports = {
+  parseSlug,
+  getDropInfo,
   clearFeesCache,
   getTrendingCollections,
   searchCollections,
