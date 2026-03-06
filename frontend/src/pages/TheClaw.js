@@ -255,17 +255,21 @@ function MintPanel({ ethPrice }) {
             {/* Wallet eligibility note */}
             {drop.walletChecked ? (
               <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
-                Eligibility checked for{' '}
+                Auto-checked for{' '}
                 <span style={{ fontFamily: 'JetBrains Mono, monospace', color: '#94a3b8' }}>
                   {drop.walletChecked.slice(0, 6)}…{drop.walletChecked.slice(-4)}
                 </span>
+                {' '}— use the checker below to check any wallet
               </div>
             ) : (
               <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>
-                ⚠ No wallet connected — go to Wallet page to check your WL eligibility
+                No wallet connected — use the checker below to check any address
               </div>
             )}
           </div>
+
+          {/* ── Eligibility checker ── */}
+          <EligibilityChecker drop={drop} chain={chain} />
         </>
       )}
 
@@ -363,6 +367,86 @@ function MintPanel({ ethPrice }) {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+/* ─── Eligibility Checker ────────────────────────────────────────────────── */
+function EligibilityChecker({ drop, chain }) {
+  const [wallet, setWallet]   = useState('');
+  const [busy, setBusy]       = useState(false);
+  const [results, setResults] = useState(null); // array of { stage, title, isPublic, status, eligible }
+  const [err, setErr]         = useState(null);
+
+  const handleCheck = async () => {
+    const addr = wallet.trim();
+    if (!addr) return;
+    setBusy(true); setErr(null); setResults(null);
+    try {
+      const data = await mintApi.checkEligibility(drop.slug, addr, chain);
+      setResults(data.phases);
+    } catch (e) {
+      setErr(e.response?.data?.error || e.message);
+    }
+    setBusy(false);
+  };
+
+  const ELIGIBLE_COLOR   = { true: '#22c55e', false: '#ef4444', null: '#64748b' };
+  const ELIGIBLE_LABEL   = { true: '✓ Eligible', false: '✗ Not eligible', null: 'Unknown' };
+
+  return (
+    <div style={styles.field}>
+      <label style={styles.label}>Check WL Eligibility</label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          style={{ ...styles.input, flex: 1 }}
+          placeholder="0x… wallet address to check"
+          value={wallet}
+          onChange={(e) => { setWallet(e.target.value); setResults(null); setErr(null); }}
+          onKeyDown={(e) => e.key === 'Enter' && handleCheck()}
+        />
+        <button
+          onClick={handleCheck}
+          disabled={busy || !wallet.trim()}
+          style={{
+            padding: '0 18px', borderRadius: 8, border: 'none', cursor: busy || !wallet.trim() ? 'not-allowed' : 'pointer',
+            background: '#6366f1', color: '#fff', fontWeight: 700, fontSize: 13, opacity: busy || !wallet.trim() ? 0.5 : 1,
+          }}
+        >
+          {busy ? '…' : 'Check'}
+        </button>
+      </div>
+
+      {err && <div style={{ color: '#ef4444', fontSize: 12, marginTop: 6 }}>{err}</div>}
+
+      {results && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {results.map((phase) => {
+            const eligible  = phase.eligible;
+            const color     = ELIGIBLE_COLOR[eligible] ?? '#64748b';
+            const statusColor = PHASE_STATUS_COLOR[phase.status] || '#64748b';
+            return (
+              <div
+                key={phase.stage}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 12px', borderRadius: 8, background: '#0f172a',
+                  border: `1px solid ${color}44`,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 700, color: '#f1f5f9', fontSize: 13 }}>{phase.title}</span>
+                  {phase.isPublic && <span style={mintBadge('#22c55e')}>PUBLIC</span>}
+                  <span style={mintBadge(statusColor)}>{PHASE_STATUS_LABEL[phase.status] || phase.status}</span>
+                </div>
+                <span style={{ fontWeight: 700, color, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>
+                  {phase.isPublic ? 'Open to all' : (ELIGIBLE_LABEL[eligible] ?? 'Unknown')}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

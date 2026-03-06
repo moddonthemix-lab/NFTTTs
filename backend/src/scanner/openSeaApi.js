@@ -411,6 +411,62 @@ function parseSlug(input) {
 }
 
 /**
+ * Check if a wallet is on the allowlist for a single phase.
+ * Returns true | false | null (null = API didn't return a clear answer).
+ */
+async function checkPhaseEligibility(slug, stageId, walletAddress) {
+  try {
+    const r = await rateLimitedCall(() =>
+      api.get(`/drops/${slug}/phases/${stageId}/allowlist`, {
+        params: { wallet_address: walletAddress },
+      })
+    );
+    const d = r.data;
+    if (typeof d?.is_eligible === 'boolean') return d.is_eligible;
+    if (Array.isArray(d?.entries))            return d.entries.length > 0;
+    if (Array.isArray(d?.allowlist))          return d.allowlist.some(
+      (e) => (e.address || e.wallet_address || '').toLowerCase() === walletAddress.toLowerCase()
+    );
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check wallet eligibility across all phases of a drop without re-fetching full drop data.
+ * Returns an array of { stage, title, isPublic, status, eligible }.
+ */
+async function checkEligibility(slugOrUrl, walletAddress, chain = 'ethereum') {
+  const slug = parseSlug(slugOrUrl);
+  if (!slug) throw new Error('Invalid collection slug or URL');
+
+  const drop = await rateLimitedCall(async () => {
+    const res = await api.get(`/drops/${slug}`).catch((err) => {
+      if (err.response?.status === 404) throw new Error(`Collection "${slug}" not found on OpenSea`);
+      throw err;
+    });
+    return res.data;
+  });
+
+  const rawPhases = drop.drop_stages || drop.phases || drop.drop_phases || [];
+  const now = Date.now();
+
+  return Promise.all(rawPhases.map(async (phase) => {
+    const startMs = phase.start_date ? new Date(phase.start_date).getTime() : null;
+    const endMs   = phase.end_date   ? new Date(phase.end_date).getTime()   : null;
+    const status  = endMs && endMs < now ? 'ended' : startMs && startMs > now ? 'upcoming' : 'active';
+    const stageId = phase.stage ?? phase.id ?? phase.stage_id;
+    const title   = phase.title || phase.name || phase.stage_name || phase.label || String(stageId) || 'Phase';
+    const isPublic = !!phase.is_public;
+
+    const eligible = isPublic ? true : await checkPhaseEligibility(slug, stageId, walletAddress);
+
+    return { stage: stageId, title, isPublic, status, eligible };
+  }));
+}
+
+/**
  * Fetch drop phases for a collection and check wallet eligibility per phase.
  * walletAddress is optional — when provided, each phase gets an `eligible` field.
  * Returns { drop, phases } where phases is an array enriched with:
@@ -454,23 +510,15 @@ async function getDropInfo(slugOrUrl, walletAddress = null, chain = 'ethereum') 
 
     let eligible = phase.is_public ? true : null;
 
-    // Check allowlist eligibility for gated phases
-    if (!phase.is_public && walletAddress && status !== 'ended') {
-      try {
-        const r = await rateLimitedCall(() =>
-          api.get(`/drops/${slug}/phases/${phase.stage}/allowlist`, {
-            params: { wallet_address: walletAddress },
-          })
-        );
-        eligible = r.data?.is_eligible ?? (r.data?.entries?.length > 0) ?? null;
-      } catch {
-        eligible = null; // unknown — API doesn't support it or phase has no allowlist endpoint
-      }
+    // Check allowlist eligibility for gated phases (all statuses — user may want to see past eligibility)
+    if (!phase.is_public && walletAddress) {
+      eligible = await checkPhaseEligibility(slug, phase.stage, walletAddress);
     }
 
+    const stageId = phase.stage ?? phase.id ?? phase.stage_id;
     return {
-      stage:               phase.stage,
-      title:               phase.title || phase.stage || 'Phase',
+      stage:               stageId,
+      title:               phase.title || phase.name || phase.stage_name || phase.label || String(stageId) || 'Phase',
       startDate:           phase.start_date || null,
       endDate:             phase.end_date   || null,
       mintPriceEth,
@@ -498,6 +546,7 @@ async function getDropInfo(slugOrUrl, walletAddress = null, chain = 'ethereum') 
 module.exports = {
   parseSlug,
   getDropInfo,
+  checkEligibility,
   clearFeesCache,
   getTrendingCollections,
   searchCollections,

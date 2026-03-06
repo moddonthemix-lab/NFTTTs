@@ -491,6 +491,21 @@ app.get('/api/mint/drop', async (req, res) => {
   }
 });
 
+// --- Check WL eligibility for a wallet across all phases ---
+app.get('/api/mint/check-eligibility', async (req, res) => {
+  try {
+    const { input, chain = 'ethereum', wallet } = req.query;
+    if (!input)  return res.status(400).json({ error: 'input (slug or OpenSea URL) required' });
+    if (!wallet) return res.status(400).json({ error: 'wallet address required' });
+    const phases = await openSeaApi.checkEligibility(input, wallet, chain);
+    res.json({ wallet, phases });
+  } catch (err) {
+    logger.error(`checkEligibility error: ${err.message}`);
+    const status = err.message.includes('not found on OpenSea') ? 404 : 500;
+    res.status(status).json({ error: err.message });
+  }
+});
+
 // --- Mint ---
 app.post('/api/mint', async (req, res) => {
   try {
