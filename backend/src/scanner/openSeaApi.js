@@ -423,7 +423,10 @@ async function getDropInfo(slugOrUrl, walletAddress = null, chain = 'ethereum') 
   if (!slug) throw new Error('Invalid collection slug or URL');
 
   const drop = await rateLimitedCall(async () => {
-    const res = await api.get(`/drops/${slug}`);
+    const res = await api.get(`/drops/${slug}`).catch((err) => {
+      if (err.response?.status === 404) throw new Error(`Collection "${slug}" not found on OpenSea`);
+      throw err;
+    });
     return res.data;
   });
 

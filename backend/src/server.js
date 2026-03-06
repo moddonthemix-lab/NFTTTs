@@ -486,7 +486,8 @@ app.get('/api/mint/drop', async (req, res) => {
     res.json(drop);
   } catch (err) {
     logger.error(`getDropInfo error: ${err.message}`);
-    res.status(500).json({ error: err.message });
+    const status = err.message.includes('not found on OpenSea') ? 404 : 500;
+    res.status(status).json({ error: err.message });
   }
 });
 
