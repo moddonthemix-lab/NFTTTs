@@ -211,8 +211,8 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
     setScanningSlug(slug);
     setScannedResult(null);
     try {
-      const result = await scannerApi.scanCollection(slug);
-      setScannedResult(result);
+      const result = await scannerApi.scanCollection(slug, searchChain);
+      setScannedResult({ ...result, chain: result.chain || searchChain });
     } catch (err) {
       alert(err.message);
     }
@@ -313,6 +313,7 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                     <div style={styles.srMeta} className="mono">
                       {slug}
                       {contract && <span style={styles.srContract}> · {contract.slice(0, 6)}…{contract.slice(-4)}</span>}
+                      {col.chain === 'base' && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: '#60a5fa', background: '#1e3a5f', borderRadius: 3, padding: '1px 4px' }}>BASE</span>}
                     </div>
                   </div>
                   <div style={styles.srActions}>
@@ -322,6 +323,19 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                       disabled={scanningSlug === slug}
                     >
                       {scanningSlug === slug ? '...' : 'Scan'}
+                    </button>
+                    <button
+                      style={isCollectionFavorited(slug)
+                        ? { ...styles.btnGroupWatch, color: '#f43f5e', borderColor: '#f43f5e' }
+                        : styles.btnGroupWatch}
+                      onClick={() => handleToggleCollectionFavorite({
+                        slug, name: col.name || slug,
+                        image: col.image_url || '', floorPriceEth: 0,
+                        chain: col.chain || searchChain,
+                      })}
+                      title={isCollectionFavorited(slug) ? 'Remove from Favorites' : 'Add to Favorites'}
+                    >
+                      {isCollectionFavorited(slug) ? '♥' : '♡'}
                     </button>
                     <button
                       style={watched ? styles.btnGroupUnwatch : styles.btnGroupWatch}
@@ -357,6 +371,9 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                     collectionSlug: slug,
                     collectionName: scannedResult.collection?.name || slug,
                     collectionImage: r.nftImageUrl || scannedResult.collection?.image_url || '',
+                    chain: scannedResult.chain || searchChain,
+                    contractAddress: r.contractAddress,
+                    tokenId: r.tokenId,
                     listingPriceEth: r.priceEth,
                     floorPriceEth: dsStats?.total?.floor_price || 0,
                     avgSalePriceEth: dsOneDayInt.average_price || 0,

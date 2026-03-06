@@ -21,14 +21,24 @@ export default function Favorites() {
   const [nftImages, setNftImages] = useState({});
   const fetchedNftImages = useRef(new Set());
 
-  useEffect(() => {
+  const refreshFavorites = React.useCallback(() => {
     favoritesApi.get().then((list) => {
       setFavorites(list);
-      // Auto-expand all NFT-opportunity groups on load
-      const slugs = new Set(list.filter((f) => f.type !== 'collection').map((f) => f.collectionSlug || 'unknown'));
-      setExpandedCollections(slugs);
+      setExpandedCollections((prev) => {
+        // Auto-expand NFT groups that aren't yet tracked
+        const newSlugs = list.filter((f) => f.type !== 'collection').map((f) => f.collectionSlug || 'unknown');
+        const next = new Set(prev);
+        newSlugs.forEach((s) => next.add(s));
+        return next;
+      });
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    refreshFavorites();
+    const interval = setInterval(refreshFavorites, 90_000); // refresh every 90s
+    return () => clearInterval(interval);
+  }, [refreshFavorites]);
 
   const toggleCollection = (slug, isColFav = false) => {
     setExpandedCollections((prev) => {
@@ -37,8 +47,9 @@ export default function Favorites() {
       next.add(slug);
       // Fetch live listings on first expand of a bookmarked collection
       if (isColFav && !colListings[slug]) {
+        const colChain = favorites.find((f) => f.collectionSlug === slug)?.chain || 'ethereum';
         setColListings((p) => ({ ...p, [slug]: { status: 'loading', results: [] } }));
-        scannerApi.scanCollection(slug)
+        scannerApi.scanCollection(slug, colChain)
           .then((data) => {
             const results = (data.results || []).slice(0, 10).map((r, i) => ({
               id: r.listing?.order_hash || `${slug}_fav_${i}`,

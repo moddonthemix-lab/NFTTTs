@@ -137,7 +137,7 @@ async function searchCollections(query, chain = 'ethereum') {
 
   const addCol = (c) => {
     const slug = c.collection || c.slug;
-    if (slug && !seen.has(slug)) { seen.add(slug); results.push(c); }
+    if (slug && !seen.has(slug)) { seen.add(slug); results.push({ ...c, chain }); }
   };
 
   // Contract address lookup

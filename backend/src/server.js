@@ -234,9 +234,10 @@ app.get('/api/bot/diagnostics', async (req, res) => {
 // --- Scanner ---
 app.get('/api/scanner/collection/:slug', async (req, res) => {
   try {
-    const result = await scanCollection(req.params.slug);
+    const chain = req.query.chain || 'ethereum';
+    const result = await scanCollection(req.params.slug, chain);
     if (!result) return res.status(404).json({ error: 'Collection not found' });
-    res.json(result);
+    res.json({ ...result, chain });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -822,6 +823,22 @@ httpServer.listen(PORT, () => {
 
   // Start persistent sniper service — re-arms all active snipers from DB
   sniperService.start();
+
+  // Standalone opportunity scanner — runs every 150s when the bot is NOT running.
+  // When the bot IS running it handles scanning itself on its own cron schedule.
+  let autoScanRunning = false;
+  setInterval(async () => {
+    if (botEngine.isBotRunning() || autoScanRunning) return; // bot handles it, or scan in progress
+    autoScanRunning = true;
+    try {
+      logger.info('Auto-scan: running background opportunity scan...');
+      await scanForOpportunities();
+    } catch (err) {
+      logger.warn(`Auto-scan error: ${err.message}`);
+    } finally {
+      autoScanRunning = false;
+    }
+  }, 150_000);
 
   // Standalone bid fill monitor — runs every 90s whether or not the bot is active.
   // Skipped when the bot is running (it already calls manageBids internally).
