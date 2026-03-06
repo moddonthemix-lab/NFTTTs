@@ -490,6 +490,7 @@ async function getDropInfo(slugOrUrl, walletAddress = null, chain = 'ethereum') 
     chain:           drop.chain || chain,
     imageUrl:        drop.image_url || null,
     totalSupply:     drop.total_supply || null,
+    walletChecked:   walletAddress || null,
     phases,
   };
 }

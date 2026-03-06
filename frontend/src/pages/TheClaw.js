@@ -60,11 +60,13 @@ function ModeCard({ label, icon, desc, color, active, onClick }) {
 const PHASE_STATUS_COLOR = { active: '#22c55e', upcoming: '#f59e0b', ended: '#475569' };
 const PHASE_STATUS_LABEL = { active: 'LIVE', upcoming: 'UPCOMING', ended: 'ENDED' };
 
-function EligibilityBadge({ eligible, isPublic }) {
-  if (isPublic) return <span style={mintBadge('#22c55e')}>PUBLIC</span>;
-  if (eligible === true)  return <span style={mintBadge('#6366f1')}>ELIGIBLE</span>;
-  if (eligible === false) return <span style={mintBadge('#ef4444')}>NOT ELIGIBLE</span>;
-  return <span style={mintBadge('#64748b')}>ALLOWLIST</span>;
+function EligibilityBadge({ eligible, isPublic, walletChecked }) {
+  if (isPublic)           return <span style={mintBadge('#22c55e')}>PUBLIC</span>;
+  if (eligible === true)  return <span style={mintBadge('#6366f1')}>✓ ELIGIBLE</span>;
+  if (eligible === false) return <span style={mintBadge('#ef4444')}>✗ NOT ELIGIBLE</span>;
+  // eligible === null
+  if (!walletChecked)     return <span style={{ ...mintBadge('#f59e0b'), cursor: 'default' }} title="Connect a wallet to check your eligibility">WL · ?</span>;
+  return <span style={{ ...mintBadge('#64748b'), cursor: 'default' }} title="Eligibility could not be determined for this phase">ALLOWLIST</span>;
 }
 
 function mintBadge(color) {
@@ -223,7 +225,7 @@ function MintPanel({ ethPrice }) {
                     >
                       <div>
                         <span style={{ fontWeight: 700, color: '#f1f5f9', fontSize: 13 }}>{phase.title}</span>
-                        <EligibilityBadge eligible={phase.eligible} isPublic={phase.isPublic} />
+                        <EligibilityBadge eligible={phase.eligible} isPublic={phase.isPublic} walletChecked={drop.walletChecked} />
                         <span style={{ ...mintBadge(statusColor), marginLeft: 6 }}>
                           {PHASE_STATUS_LABEL[phase.status] || phase.status}
                         </span>
@@ -247,6 +249,20 @@ function MintPanel({ ethPrice }) {
                     </button>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Wallet eligibility note */}
+            {drop.walletChecked ? (
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
+                Eligibility checked for{' '}
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', color: '#94a3b8' }}>
+                  {drop.walletChecked.slice(0, 6)}…{drop.walletChecked.slice(-4)}
+                </span>
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>
+                ⚠ No wallet connected — go to Wallet page to check your WL eligibility
               </div>
             )}
           </div>
