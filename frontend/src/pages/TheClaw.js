@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { mintApi, sniperApi } from '../utils/api';
+import { mintApi, sniperApi, scannerApi } from '../utils/api';
 
 export default function TheClaw({ ethPrice }) {
   const [mode, setMode] = useState(null); // null | 'mint' | 'fpbuy'
@@ -201,10 +201,13 @@ function SniperPanel({ ethPrice }) {
   const [quantity, setQuantity] = useState(1);
   const [gasSpeed, setGasSpeed] = useState('normal');
   const [chain, setChain]       = useState('ethereum');
-  const [busy, setBusy]         = useState(false);
-  const [error, setError]       = useState(null);
-  const [snipers, setSnipers]   = useState([]);
-  const [cancelling, setCancelling] = useState(new Set());
+  const [busy, setBusy]               = useState(false);
+  const [error, setError]             = useState(null);
+  const [preview, setPreview]         = useState(null);
+  const [previewing, setPreviewing]   = useState(false);
+  const [previewError, setPreviewError] = useState(null);
+  const [snipers, setSnipers]         = useState([]);
+  const [cancelling, setCancelling]   = useState(new Set());
 
   const fmtUsd = (eth) => ethPrice && eth > 0 ? ` ≈ $${(eth * ethPrice).toFixed(2)}` : '';
 
@@ -221,9 +224,23 @@ function SniperPanel({ ethPrice }) {
     return () => clearInterval(t);
   }, [loadSnipers]);
 
+  const handleLookup = async () => {
+    const s = slug.trim().toLowerCase();
+    if (!s) return;
+    setPreview(null); setPreviewError(null); setPreviewing(true);
+    try {
+      const info = await scannerApi.getInfo(s);
+      setPreview(info);
+    } catch (err) {
+      setPreviewError(err.response?.data?.error || 'Collection not found — check the slug');
+    }
+    setPreviewing(false);
+  };
+
   const handleArm = async () => {
     const s = slug.trim().toLowerCase();
     if (!s) return setError('Collection slug is required');
+    if (!preview) return setError('Look up the collection first to verify it');
     const mn = parseFloat(minPrice);
     const mx = parseFloat(maxPrice);
     if (isNaN(mn) || mn <= 0) return setError('Enter a valid min price > 0');
@@ -232,7 +249,7 @@ function SniperPanel({ ethPrice }) {
     setError(null); setBusy(true);
     try {
       await sniperApi.arm(s, mn, mx, quantity, gasSpeed, chain);
-      setSlug(''); setMinPrice(''); setMaxPrice(''); setQuantity(1);
+      setSlug(''); setMinPrice(''); setMaxPrice(''); setQuantity(1); setPreview(null);
       await loadSnipers();
     } catch (err) {
       setError(err.response?.data?.error || err.message);
@@ -262,12 +279,23 @@ function SniperPanel({ ethPrice }) {
       <div style={styles.row}>
         <div style={{ ...styles.field, flex: 1 }}>
           <label style={styles.label}>Collection Slug</label>
-          <input
-            style={styles.input}
-            placeholder="e.g. boredapeyachtclub"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              style={{ ...styles.input, flex: 1 }}
+              placeholder="e.g. boredapeyachtclub"
+              value={slug}
+              onChange={(e) => { setSlug(e.target.value); setPreview(null); setPreviewError(null); }}
+              onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
+            />
+            <button
+              style={{ ...styles.actionBtn, background: '#1e293b', color: '#94a3b8', fontSize: 13, padding: '10px 16px', flexShrink: 0 }}
+              onClick={handleLookup}
+              disabled={!slug.trim() || previewing}
+              type="button"
+            >
+              {previewing ? '…' : 'Look up'}
+            </button>
+          </div>
         </div>
         <div style={styles.field}>
           <label style={styles.label}>Chain</label>
@@ -277,6 +305,33 @@ function SniperPanel({ ethPrice }) {
           </select>
         </div>
       </div>
+
+      {previewError && <div style={styles.error}>{previewError}</div>}
+
+      {preview && (
+        <div style={styles.previewBox}>
+          <div style={styles.previewLeft}>
+            {preview.imageUrl && (
+              <img src={preview.imageUrl} alt="" style={styles.previewImg} onError={(e) => e.target.style.display='none'} />
+            )}
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#f1f5f9' }}>{preview.name}</div>
+              {preview.description && (
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 3, lineHeight: 1.4 }}>
+                  {preview.description.length > 100 ? preview.description.slice(0, 100) + '…' : preview.description}
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={styles.previewStats}>
+            <PreviewStat label="Floor"      value={preview.floorPriceEth != null ? `${preview.floorPriceEth} ETH` : '—'} color="#22c55e" />
+            <PreviewStat label="Best Offer" value={preview.bestOfferEth != null ? `${preview.bestOfferEth} ETH` : '—'} color="#6366f1" />
+            <PreviewStat label="24h Vol"    value={preview.volume24hEth != null ? `${parseFloat(preview.volume24hEth).toFixed(2)} ETH` : '—'} />
+            <PreviewStat label="Supply"     value={preview.totalSupply != null ? preview.totalSupply.toLocaleString() : '—'} />
+            <PreviewStat label="Owners"     value={preview.numOwners != null ? preview.numOwners.toLocaleString() : '—'} />
+          </div>
+        </div>
+      )}
 
       {/* Price range + quantity */}
       <div style={styles.row}>
@@ -390,6 +445,15 @@ function SniperPanel({ ethPrice }) {
   );
 }
 
+function PreviewStat({ label, value, color }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: color || '#f1f5f9', fontFamily: 'JetBrains Mono, monospace' }}>{value}</span>
+    </div>
+  );
+}
+
 function SniperRow({ sniper, onCancel, cancelling, fmtUsd }) {
   const statusColor = sniper.status === 'active' ? '#22c55e' : sniper.status === 'filled' ? '#6366f1' : '#475569';
   const fills = sniper.fills || [];
@@ -452,4 +516,8 @@ const styles = {
   footNote: { fontSize: 11, color: '#475569' },
   error: { background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', color: '#f87171', fontSize: 13 },
   success: { background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '10px 14px', color: '#86efac', fontSize: 13 },
+  previewBox: { background: '#1e293b', border: '1px solid #22c55e40', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 },
+  previewLeft: { display: 'flex', gap: 12, alignItems: 'flex-start' },
+  previewImg: { width: 52, height: 52, borderRadius: 8, objectFit: 'cover', flexShrink: 0 },
+  previewStats: { display: 'flex', gap: 16, flexWrap: 'wrap' },
 };
