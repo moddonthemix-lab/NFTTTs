@@ -12,6 +12,7 @@ const defaultDb = {
   portfolio: [],
   trades: [],
   bids: [],
+  snipers: [],
   pendingApprovals: [],
   watchlist: [],   // legacy global watchlist (kept for backward compat)
   favorites: [],   // legacy global favorites (kept for backward compat)
@@ -31,6 +32,7 @@ function readDb() {
     const raw = fs.readFileSync(DB_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     if (!parsed.wallets) parsed.wallets = {};
+    if (!parsed.snipers) parsed.snipers = [];
     return parsed;
   } catch {
     writeDb(defaultDb);
@@ -222,6 +224,35 @@ function updateApproval(id, status) {
   return approval;
 }
 
+// --- Snipers ---
+function getSnipers() { const db = readDb(); return db.snipers || []; }
+
+function addSniper(sniper) {
+  const db = readDb();
+  db.snipers.push({ ...sniper, createdAt: new Date().toISOString(), status: 'active', fills: [], quantityFilled: 0 });
+  writeDb(db);
+  return db.snipers[db.snipers.length - 1];
+}
+
+function updateSniper(id, updates) {
+  const db = readDb();
+  const s = db.snipers.find((x) => x.id === id);
+  if (s) { Object.assign(s, updates); writeDb(db); }
+  return s;
+}
+
+function addSniperFill(id, fill) {
+  const db = readDb();
+  const s = db.snipers.find((x) => x.id === id);
+  if (!s) return;
+  s.fills = s.fills || [];
+  s.fills.push({ ...fill, filledAt: new Date().toISOString() });
+  s.quantityFilled = s.fills.length;
+  if (s.quantityFilled >= s.quantity) s.status = 'filled';
+  writeDb(db);
+  return s;
+}
+
 module.exports = {
   readDb, writeDb,
   getPortfolio, getTrades, getBids, getPendingApprovals, getStats,
@@ -229,6 +260,7 @@ module.exports = {
   getWatchlist, addToWatchlist, removeFromWatchlist,
   getWhales, addWhale, removeWhale,
   addToPortfolio, removeFromPortfolio, updatePortfolioListing,
+  getSnipers, addSniper, updateSniper, addSniperFill,
   addTrade,
   addBid, removeBid, removeBidByOrderHash,
   addPendingApproval, updateApproval,

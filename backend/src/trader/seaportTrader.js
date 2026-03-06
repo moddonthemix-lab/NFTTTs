@@ -149,7 +149,7 @@ async function approveWETH(wallet, amountWei, chain = 'ethereum') {
 
 // ─── Buy ─────────────────────────────────────────────────────────────────────
 
-async function buyNFT(listing) {
+async function buyNFT(listing, gasOverride = {}) {
   const chain = listing.chain || 'ethereum';
   const wallet = walletUtils.getWalletForChain(chain);
   if (!wallet) throw new Error('No wallet connected. Import a wallet first.');
@@ -196,6 +196,7 @@ async function buyNFT(listing) {
     data: calldata,
     value: BigInt(txParams.value || '0'),
     gasLimit: BigInt(txParams.gas || '300000'),
+    ...gasOverride,  // maxPriorityFeePerGas / maxFeePerGas from sniper gas speed
   });
 
   logger.info(`Buy TX sent: ${tx.hash}`);
