@@ -454,13 +454,49 @@ function PreviewStat({ label, value, color }) {
   );
 }
 
+function useSecondsAgo(isoTimestamp) {
+  const [secs, setSecs] = useState(null);
+  useEffect(() => {
+    if (!isoTimestamp) { setSecs(null); return; }
+    const update = () => setSecs(Math.floor((Date.now() - new Date(isoTimestamp).getTime()) / 1000));
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [isoTimestamp]);
+  return secs;
+}
+
+const POLL_MS = { slow: 30000, normal: 10000, fast: 5000, turbo: 2000 };
+
 function SniperRow({ sniper, onCancel, cancelling, fmtUsd }) {
   const statusColor = sniper.status === 'active' ? '#22c55e' : sniper.status === 'filled' ? '#6366f1' : '#475569';
   const fills = sniper.fills || [];
+  const secsAgo = useSecondsAgo(sniper.lastCheckedAt);
+  const pollSec = (POLL_MS[sniper.gasSpeed] || 10000) / 1000;
+  const isActive = sniper.status === 'active';
+
+  let checkedLabel = null;
+  if (isActive && secsAgo !== null) {
+    if (secsAgo < 3) checkedLabel = { text: 'just checked', color: '#22c55e' };
+    else if (secsAgo < pollSec * 1.5) checkedLabel = { text: `checked ${secsAgo}s ago`, color: '#94a3b8' };
+    else checkedLabel = { text: `checked ${secsAgo}s ago — next poll soon`, color: '#f59e0b' };
+  } else if (isActive && secsAgo === null) {
+    checkedLabel = { text: 'waiting for first poll…', color: '#64748b' };
+  }
+
   return (
     <div style={{ background: '#1e293b', borderRadius: 10, padding: '12px 14px', marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
+          {/* Pulse dot for active */}
+          {isActive && (
+            <span style={{
+              display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+              background: '#22c55e', flexShrink: 0,
+              boxShadow: secsAgo !== null && secsAgo < 3 ? '0 0 0 4px #22c55e44' : 'none',
+              transition: 'box-shadow 0.4s',
+            }} />
+          )}
           <span style={{ fontWeight: 700, fontSize: 13, color: '#f1f5f9' }}>{sniper.collectionSlug}</span>
           <span style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'JetBrains Mono, monospace' }}>
             {sniper.minPriceEth}–{sniper.maxPriceEth} ETH
@@ -483,6 +519,11 @@ function SniperRow({ sniper, onCancel, cancelling, fmtUsd }) {
           </button>
         )}
       </div>
+      {checkedLabel && (
+        <div style={{ fontSize: 11, color: checkedLabel.color, fontFamily: 'JetBrains Mono, monospace' }}>
+          ⟳ {checkedLabel.text} · polls every {pollSec}s
+        </div>
+      )}
       {fills.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {fills.map((f, i) => (
