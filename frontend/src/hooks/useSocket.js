@@ -56,6 +56,7 @@ export function useSocket() {
       setBids(data.bids || []);
       setPendingApprovals(data.pendingApprovals || []);
       if (data.stats) setStats(data.stats);
+      if (data.opportunities?.length) setOpportunities(data.opportunities);
       addLog('info', 'Bot state initialized');
     });
 

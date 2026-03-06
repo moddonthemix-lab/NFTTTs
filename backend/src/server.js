@@ -90,6 +90,10 @@ BOT_EVENTS.forEach((evt) => {
   botEmitter.on(evt, (data) => io.emit(evt, data));
 });
 
+// Cache latest scan results so new socket connections get them immediately
+let latestOpportunities = [];
+botEmitter.on('scan:opportunities', (d) => { latestOpportunities = d.opportunities || []; });
+
 // --- Socket.IO connection ---
 io.on('connection', (socket) => {
   logger.info(`Client connected: ${socket.id}`);
@@ -105,6 +109,7 @@ io.on('connection', (socket) => {
       bids: db.getBids(),
       pendingApprovals: db.getPendingApprovals().filter((a) => a.status === 'pending'),
       stats: db.getStats(),
+      opportunities: latestOpportunities,
       config: {
         autoTrade: config.autoTrade,
         maxBuyPriceEth: config.trading.maxBuyPriceEth,
@@ -853,21 +858,26 @@ httpServer.listen(PORT, () => {
   // Start persistent sniper service — re-arms all active snipers from DB
   sniperService.start();
 
-  // Standalone opportunity scanner — runs every 150s when the bot is NOT running.
-  // When the bot IS running it handles scanning itself on its own cron schedule.
+  // Standalone opportunity scanner — runs every 120s regardless of bot state.
+  // Bot engine may also scan on its own cron when running; duplicate scans are harmless.
   let autoScanRunning = false;
-  setInterval(async () => {
-    if (botEngine.isBotRunning() || autoScanRunning) return; // bot handles it, or scan in progress
+  const runAutoScan = async () => {
+    if (autoScanRunning) return;
     autoScanRunning = true;
     try {
-      logger.info('Auto-scan: running background opportunity scan...');
+      logger.info('Auto-scan: scanning for opportunities...');
       await scanForOpportunities();
     } catch (err) {
       logger.warn(`Auto-scan error: ${err.message}`);
     } finally {
       autoScanRunning = false;
     }
-  }, 150_000);
+  };
+
+  // Initial scan shortly after startup so the scanner isn't empty on first load
+  setTimeout(runAutoScan, 5_000);
+  // Then repeat every 120s
+  setInterval(runAutoScan, 120_000);
 
   // Standalone bid fill monitor — runs every 90s whether or not the bot is active.
   // Skipped when the bot is running (it already calls manageBids internally).
