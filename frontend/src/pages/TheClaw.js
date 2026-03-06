@@ -175,7 +175,17 @@ function MintPanel({ ethPrice }) {
         <div style={styles.hint}>Paste an OpenSea collection URL or just the slug (e.g. <code>azuki</code>)</div>
       </div>
 
-      {lookupErr && <div style={styles.error}>{lookupErr}</div>}
+      {lookupErr && (
+        <div style={styles.error}>
+          {lookupErr}
+          {(lookupErr.includes('not found') || lookupErr.includes('no mint phases')) && (
+            <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>
+              Tip: paste the full OpenSea URL from the browser address bar
+              (e.g. <code style={{ color: '#cbd5e1' }}>opensea.io/collection/uno-nessuno-e-centomila</code>)
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Step 2: Phase selector ── */}
       {drop && (

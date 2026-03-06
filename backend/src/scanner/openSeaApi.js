@@ -438,31 +438,14 @@ async function checkPhaseEligibility(slug, stageId, walletAddress) {
  * Returns an array of { stage, title, isPublic, status, eligible }.
  */
 async function checkEligibility(slugOrUrl, walletAddress, chain = 'ethereum') {
-  const slug = parseSlug(slugOrUrl);
-  if (!slug) throw new Error('Invalid collection slug or URL');
+  // Reuse getDropInfo to benefit from its full fallback chain (slug resolution, etc.)
+  const dropData = await getDropInfo(slugOrUrl, null, chain);
+  const resolvedSlug = dropData.slug;
 
-  const drop = await rateLimitedCall(async () => {
-    const res = await api.get(`/drops/${slug}`).catch((err) => {
-      if (err.response?.status === 404) throw new Error(`Collection "${slug}" not found on OpenSea`);
-      throw err;
-    });
-    return res.data;
-  });
-
-  const rawPhases = drop.drop_stages || drop.phases || drop.drop_phases || [];
-  const now = Date.now();
-
-  return Promise.all(rawPhases.map(async (phase) => {
-    const startMs = phase.start_date ? new Date(phase.start_date).getTime() : null;
-    const endMs   = phase.end_date   ? new Date(phase.end_date).getTime()   : null;
-    const status  = endMs && endMs < now ? 'ended' : startMs && startMs > now ? 'upcoming' : 'active';
-    const stageId = phase.stage ?? phase.id ?? phase.stage_id;
-    const title   = phase.title || phase.name || phase.stage_name || phase.label || String(stageId) || 'Phase';
-    const isPublic = !!phase.is_public;
-
-    const eligible = isPublic ? true : await checkPhaseEligibility(slug, stageId, walletAddress);
-
-    return { stage: stageId, title, isPublic, status, eligible };
+  // Re-check eligibility for each already-resolved phase, this time with the wallet address
+  return Promise.all(dropData.phases.map(async (phase) => {
+    const eligible = phase.isPublic ? true : await checkPhaseEligibility(resolvedSlug, phase.stage, walletAddress);
+    return { stage: phase.stage, title: phase.title, isPublic: phase.isPublic, status: phase.status, eligible };
   }));
 }
 
@@ -475,16 +458,85 @@ async function checkEligibility(slugOrUrl, walletAddress, chain = 'ethereum') {
  *   - status: 'upcoming' | 'active' | 'ended'
  */
 async function getDropInfo(slugOrUrl, walletAddress = null, chain = 'ethereum') {
-  const slug = parseSlug(slugOrUrl);
+  let slug = parseSlug(slugOrUrl);
   if (!slug) throw new Error('Invalid collection slug or URL');
 
-  const drop = await rateLimitedCall(async () => {
-    const res = await api.get(`/drops/${slug}`).catch((err) => {
-      if (err.response?.status === 404) throw new Error(`Collection "${slug}" not found on OpenSea`);
+  // Fetch drop data with progressive fallbacks:
+  //  1. /drops/{slug}                          — primary drops endpoint
+  //  2. /drops?collection_slug={slug}           — drops list filtered by collection
+  //  3. Search for the real slug, retry 1+2    — handles typos / missing dashes
+  //  4. /collections/{slug}                    — collection endpoint (sometimes has drop_stages)
+  let drop = null;
+  let resolvedSlug = slug;
+
+  const tryDropBySlug = async (s) => {
+    try {
+      const res = await rateLimitedCall(() => api.get(`/drops/${s}`));
+      return res.data || null;
+    } catch (err) {
+      if (err.response?.status === 404 || err.response?.status === 400) return null;
       throw err;
-    });
-    return res.data;
-  });
+    }
+  };
+
+  const tryDropsList = async (s) => {
+    try {
+      const res = await rateLimitedCall(() =>
+        api.get('/drops', { params: { collection_slug: s, chain, limit: 1 } })
+      );
+      const items = res.data?.drops || res.data?.results || [];
+      return items.length > 0 ? items[0] : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const tryCollectionFallback = async (s) => {
+    try {
+      const res = await rateLimitedCall(() => api.get(`/collections/${s}`));
+      const col = res.data;
+      if (!col) return null;
+      // Only use it if it actually has phase data embedded
+      if (col.drop_stages || col.phases || col.drop_phases || col.drop) return col;
+      // Collection found but no phases — store for a better error message
+      return { _noPhases: true, name: col.name || s };
+    } catch {
+      return null;
+    }
+  };
+
+  // Round 1: try with the parsed slug
+  drop = await tryDropBySlug(slug) || await tryDropsList(slug);
+
+  // Round 2: slug not found — search OpenSea to find the real slug (handles typos/missing dashes)
+  if (!drop) {
+    const searchResults = await searchCollections(slug, chain).catch(() => []);
+    for (const col of searchResults) {
+      const candidate = col.collection || col.slug;
+      if (candidate && candidate !== slug) {
+        drop = await tryDropBySlug(candidate) || await tryDropsList(candidate);
+        if (drop) { resolvedSlug = candidate; break; }
+      }
+    }
+  }
+
+  // Round 3: collections endpoint (mint phases sometimes embedded there)
+  if (!drop) {
+    const colFallback = await tryCollectionFallback(resolvedSlug);
+    if (colFallback?._noPhases) {
+      throw new Error(`"${colFallback.name}" is on OpenSea but has no mint phases in the Drops API`);
+    }
+    drop = colFallback;
+  }
+
+  if (!drop) {
+    throw new Error(
+      `Collection "${slug}" not found on OpenSea. ` +
+      `Paste the full OpenSea URL (e.g. opensea.io/collection/the-slug) or double-check the slug.`
+    );
+  }
+
+  slug = resolvedSlug;
 
   const rawPhases = drop.drop_stages || drop.phases || drop.drop_phases || [];
   const now = Date.now();
