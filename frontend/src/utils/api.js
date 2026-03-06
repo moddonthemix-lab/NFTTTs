@@ -63,6 +63,13 @@ export const tradesApi = {
   sweep: (slug, count, maxPriceEth) => api.post('/trade/sweep', { slug, count, maxPriceEth }).then((r) => r.data),
 };
 
+export const sniperApi = {
+  get: () => api.get('/snipers').then((r) => r.data),
+  arm: (collectionSlug, minPriceEth, maxPriceEth, quantity, gasSpeed, chain) =>
+    api.post('/snipers', { collectionSlug, minPriceEth, maxPriceEth, quantity, gasSpeed, chain }).then((r) => r.data),
+  cancel: (id) => api.delete(`/snipers/${id}`).then((r) => r.data),
+};
+
 export const favoritesApi = {
   get: () => api.get('/favorites').then((r) => r.data),
   add: (opp) => api.post('/favorites', opp).then((r) => r.data),

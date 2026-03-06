@@ -16,6 +16,7 @@ const { getEthPriceUsd } = openSeaApi;
 const botEngine = require('./trader/botEngine');
 const { buyNFT, placeBid, sellNFT, acceptBestOffer, cancelOrder, getDiagnostics } = require('./trader/seaportTrader');
 const { mintNFT } = require('./trader/mintTrader');
+const sniperService = require('./trader/sniperService');
 const { weiToEth } = require('./analyzer/scorer');
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -70,6 +71,7 @@ botEmitter.setMaxListeners(20);
 
 setScanEmitter(botEmitter);
 botEngine.setEmitter(botEmitter);
+sniperService.setEmitter(io);
 
 // Forward all bot events to connected sockets
 botEmitter.onAny?.((event, data) => {
@@ -82,6 +84,7 @@ const BOT_EVENTS = [
   'bot:started', 'bot:stopped', 'bot:cycle', 'bot:balance', 'bot:warn', 'bot:error',
   'trade:buy', 'trade:sell', 'trade:bid', 'trade:bid_filled', 'trade:list', 'trade:error',
   'approval:queued', 'approval:resolved',
+  'sniper:fill', 'sniper:done', 'sniper:cancelled', 'sniper:error',
 ];
 BOT_EVENTS.forEach((evt) => {
   botEmitter.on(evt, (data) => io.emit(evt, data));
@@ -718,6 +721,40 @@ app.get('/api/whales/:address/nfts', async (req, res) => {
   }
 });
 
+// --- Snipers ---
+app.get('/api/snipers', (req, res) => {
+  res.json(db.getSnipers());
+});
+
+app.post('/api/snipers', (req, res) => {
+  try {
+    const { collectionSlug, minPriceEth, maxPriceEth, quantity = 1, gasSpeed = 'normal', chain = 'ethereum' } = req.body;
+    if (!collectionSlug || minPriceEth == null || maxPriceEth == null) {
+      return res.status(400).json({ error: 'collectionSlug, minPriceEth, maxPriceEth required' });
+    }
+    if (parseFloat(minPriceEth) > parseFloat(maxPriceEth)) {
+      return res.status(400).json({ error: 'minPriceEth must be <= maxPriceEth' });
+    }
+    const sniper = db.addSniper({
+      collectionSlug: collectionSlug.trim().toLowerCase(),
+      minPriceEth: parseFloat(minPriceEth),
+      maxPriceEth: parseFloat(maxPriceEth),
+      quantity: Math.max(1, parseInt(quantity) || 1),
+      gasSpeed: sniperService.GAS_SPEEDS[gasSpeed] ? gasSpeed : 'normal',
+      chain,
+    });
+    sniperService.arm(sniper);
+    res.json({ success: true, sniper });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/snipers/:id', (req, res) => {
+  sniperService.cancel(req.params.id);
+  res.json({ success: true });
+});
+
 // --- Health ---
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',
@@ -750,6 +787,9 @@ httpServer.listen(PORT, () => {
   if (loaded) {
     logger.info(`Wallet loaded: ${loaded.address}`);
   }
+
+  // Start persistent sniper service — re-arms all active snipers from DB
+  sniperService.start();
 
   // Standalone bid fill monitor — runs every 90s whether or not the bot is active.
   // Skipped when the bot is running (it already calls manageBids internally).

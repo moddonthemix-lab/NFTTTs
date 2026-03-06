@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { mintApi, tradesApi, scannerApi } from '../utils/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { mintApi, sniperApi } from '../utils/api';
 
 export default function TheClaw({ ethPrice }) {
   const [mode, setMode] = useState(null); // null | 'mint' | 'fpbuy'
@@ -22,17 +22,17 @@ export default function TheClaw({ ethPrice }) {
           onClick={() => setMode(mode === 'mint' ? null : 'mint')}
         />
         <ModeCard
-          label="FP Buy"
+          label="Sniper"
           icon="⚡"
-          desc="Buy the cheapest listing at floor price"
+          desc="Auto-buy when price enters your target range"
           color="#f59e0b"
-          active={mode === 'fpbuy'}
-          onClick={() => setMode(mode === 'fpbuy' ? null : 'fpbuy')}
+          active={mode === 'sniper'}
+          onClick={() => setMode(mode === 'sniper' ? null : 'sniper')}
         />
       </div>
 
-      {mode === 'mint'  && <MintPanel ethPrice={ethPrice} />}
-      {mode === 'fpbuy' && <FPBuyPanel ethPrice={ethPrice} />}
+      {mode === 'mint'   && <MintPanel ethPrice={ethPrice} />}
+      {mode === 'sniper' && <SniperPanel ethPrice={ethPrice} />}
     </div>
   );
 }
@@ -185,55 +185,80 @@ function MintPanel({ ethPrice }) {
   );
 }
 
-/* ─── FP Buy Panel ───────────────────────────────────────────────────────── */
-function FPBuyPanel({ ethPrice }) {
-  const [slug, setSlug]           = useState('');
-  const [info, setInfo]           = useState(null);
-  const [loading, setLoading]     = useState(false);
-  const [buying, setBuying]       = useState(false);
-  const [result, setResult]       = useState(null);
-  const [error, setError]         = useState(null);
+/* ─── Gas Speed Config (mirrors backend) ─────────────────────────────────── */
+const GAS_SPEEDS = {
+  slow:   { label: 'Slow',   desc: 'Low gas — may lag in congestion',         color: '#64748b' },
+  normal: { label: 'Normal', desc: 'Standard — usually confirms within 1 min', color: '#22c55e' },
+  fast:   { label: 'Fast',   desc: 'Higher tip — fast next-few-block confirm', color: '#f59e0b' },
+  turbo:  { label: 'Turbo',  desc: 'Max tip — targets next block',             color: '#ef4444' },
+};
+
+/* ─── Sniper Panel ───────────────────────────────────────────────────────── */
+function SniperPanel({ ethPrice }) {
+  const [slug, setSlug]         = useState('');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  const [gasSpeed, setGasSpeed] = useState('normal');
+  const [chain, setChain]       = useState('ethereum');
+  const [busy, setBusy]         = useState(false);
+  const [error, setError]       = useState(null);
+  const [snipers, setSnipers]   = useState([]);
+  const [cancelling, setCancelling] = useState(new Set());
 
   const fmtUsd = (eth) => ethPrice && eth > 0 ? ` ≈ $${(eth * ethPrice).toFixed(2)}` : '';
 
-  const handleLookup = async () => {
-    const s = slug.trim().toLowerCase();
-    if (!s) return;
-    setInfo(null); setError(null); setResult(null); setLoading(true);
+  const loadSnipers = useCallback(async () => {
     try {
-      const data = await scannerApi.getInfo(s);
-      setInfo(data);
-    } catch (err) {
-      setError('Collection not found — check the slug');
-    }
-    setLoading(false);
-  };
+      const data = await sniperApi.get();
+      setSnipers(data);
+    } catch { /* ignore */ }
+  }, []);
 
-  const handleFPBuy = async () => {
+  useEffect(() => {
+    loadSnipers();
+    const t = setInterval(loadSnipers, 5000);
+    return () => clearInterval(t);
+  }, [loadSnipers]);
+
+  const handleArm = async () => {
     const s = slug.trim().toLowerCase();
-    if (!s) return;
-    const floor = info?.floorPriceEth;
-    if (!window.confirm(
-      `FP Buy floor of "${info?.name || s}"?\n\n` +
-      `Floor: ${floor ? `${floor.toFixed(4)} ETH${fmtUsd(floor)}` : 'unknown'}\n\n` +
-      `This immediately buys the cheapest listing.`
-    )) return;
-    setError(null); setResult(null); setBuying(true);
+    if (!s) return setError('Collection slug is required');
+    const mn = parseFloat(minPrice);
+    const mx = parseFloat(maxPrice);
+    if (isNaN(mn) || mn <= 0) return setError('Enter a valid min price > 0');
+    if (isNaN(mx) || mx <= 0) return setError('Enter a valid max price > 0');
+    if (mn > mx) return setError('Min price must be ≤ max price');
+    setError(null); setBusy(true);
     try {
-      const res = await tradesApi.snipe(s);
-      setResult(res);
+      await sniperApi.arm(s, mn, mx, quantity, gasSpeed, chain);
+      setSlug(''); setMinPrice(''); setMaxPrice(''); setQuantity(1);
+      await loadSnipers();
     } catch (err) {
       setError(err.response?.data?.error || err.message);
     }
-    setBuying(false);
+    setBusy(false);
   };
+
+  const handleCancel = async (id) => {
+    setCancelling((prev) => new Set([...prev, id]));
+    try {
+      await sniperApi.cancel(id);
+      await loadSnipers();
+    } catch { /* ignore */ }
+    setCancelling((prev) => { const s = new Set(prev); s.delete(id); return s; });
+  };
+
+  const active = snipers.filter((s) => s.status === 'active');
+  const done   = snipers.filter((s) => s.status !== 'active').slice(0, 10);
 
   return (
     <div style={styles.panel}>
       <div style={styles.panelTitle}>
-        <span style={{ color: '#f59e0b' }}>⚡</span> FP Buy — Floor Price Buy
+        <span style={{ color: '#f59e0b' }}>⚡</span> Sniper — Auto-Buy on Price Target
       </div>
 
+      {/* Collection + chain */}
       <div style={styles.row}>
         <div style={{ ...styles.field, flex: 1 }}>
           <label style={styles.label}>Collection Slug</label>
@@ -241,63 +266,168 @@ function FPBuyPanel({ ethPrice }) {
             style={styles.input}
             placeholder="e.g. boredapeyachtclub"
             value={slug}
-            onChange={(e) => { setSlug(e.target.value); setInfo(null); setResult(null); }}
-            onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
+            onChange={(e) => setSlug(e.target.value)}
           />
         </div>
-        <button
-          style={{ ...styles.actionBtn, background: '#1e293b', color: '#94a3b8', marginTop: 22, flexShrink: 0 }}
-          onClick={handleLookup}
-          disabled={loading || !slug.trim()}
-        >
-          {loading ? '…' : 'Look up'}
-        </button>
+        <div style={styles.field}>
+          <label style={styles.label}>Chain</label>
+          <select style={{ ...styles.input, width: 130 }} value={chain} onChange={(e) => setChain(e.target.value)}>
+            <option value="ethereum">Ethereum</option>
+            <option value="base">Base</option>
+          </select>
+        </div>
       </div>
 
-      {info && (
-        <div style={styles.infoBox}>
-          {info.imageUrl && <img src={info.imageUrl} alt="" style={styles.colImg} onError={(e) => e.target.style.display='none'} />}
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>{info.name}</div>
-            <div style={{ display: 'flex', gap: 20, marginTop: 8, flexWrap: 'wrap' }}>
-              <InfoStat label="Floor" value={info.floorPriceEth ? `${info.floorPriceEth.toFixed(4)} ETH${fmtUsd(info.floorPriceEth)}` : '—'} color="#22c55e" />
-              <InfoStat label="Best Offer" value={info.bestOfferEth ? `${info.bestOfferEth.toFixed(4)} ETH${fmtUsd(info.bestOfferEth)}` : '—'} color="#6366f1" />
-              <InfoStat label="Owners" value={info.numOwners?.toLocaleString() || '—'} />
-              <InfoStat label="Supply" value={info.totalSupply?.toLocaleString() || '—'} />
-            </div>
-          </div>
+      {/* Price range + quantity */}
+      <div style={styles.row}>
+        <div style={styles.field}>
+          <label style={styles.label}>Min Price (ETH)</label>
+          <input
+            style={{ ...styles.input, width: 130 }}
+            type="number" step="0.001" min="0"
+            placeholder="0.00"
+            value={minPrice}
+            onChange={(e) => setMinPrice(e.target.value)}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', paddingTop: 22, color: '#475569', fontSize: 18, fontWeight: 700 }}>→</div>
+        <div style={styles.field}>
+          <label style={styles.label}>Max Price (ETH)</label>
+          <input
+            style={{ ...styles.input, width: 130 }}
+            type="number" step="0.001" min="0"
+            placeholder="0.00"
+            value={maxPrice}
+            onChange={(e) => setMaxPrice(e.target.value)}
+          />
+        </div>
+        <div style={styles.field}>
+          <label style={styles.label}>Quantity</label>
+          <input
+            style={{ ...styles.input, width: 80 }}
+            type="number" min="1" max="100"
+            value={quantity}
+            onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+          />
+        </div>
+      </div>
+
+      {minPrice && maxPrice && parseFloat(minPrice) <= parseFloat(maxPrice) && (
+        <div style={styles.totalRow}>
+          Range: <strong>{parseFloat(minPrice).toFixed(4)} ETH{fmtUsd(parseFloat(minPrice))}</strong>
+          <span style={{ color: '#475569' }}>→</span>
+          <strong>{parseFloat(maxPrice).toFixed(4)} ETH{fmtUsd(parseFloat(maxPrice))}</strong>
+          {quantity > 1 && <span style={{ color: '#64748b' }}>× {quantity}</span>}
         </div>
       )}
+
+      {/* Gas speed */}
+      <div style={styles.field}>
+        <label style={styles.label}>Gas Speed</label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {Object.entries(GAS_SPEEDS).map(([key, cfg]) => (
+            <button
+              key={key}
+              onClick={() => setGasSpeed(key)}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 8,
+                border: `2px solid ${gasSpeed === key ? cfg.color : '#334155'}`,
+                background: gasSpeed === key ? `${cfg.color}20` : '#1e293b',
+                color: gasSpeed === key ? cfg.color : '#64748b',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 700,
+                transition: 'all 0.15s',
+              }}
+              title={cfg.desc}
+            >
+              {cfg.label}
+            </button>
+          ))}
+        </div>
+        <div style={styles.hint}>{GAS_SPEEDS[gasSpeed].desc}</div>
+      </div>
 
       {error && <div style={styles.error}>{error}</div>}
 
-      {result && (
-        <div style={styles.success}>
-          Bought! Paid <strong>{result.priceEth?.toFixed(4)} ETH</strong>.
-          TX: <span className="mono" style={{ color: '#818cf8' }}>{result.txHash?.slice(0, 18)}…</span>
-        </div>
-      )}
-
       <button
-        style={{ ...styles.actionBtn, background: '#f59e0b', color: '#0f172a', opacity: (!info || buying) ? 0.6 : 1 }}
-        onClick={handleFPBuy}
-        disabled={!info || buying}
+        style={{ ...styles.actionBtn, background: '#f59e0b', color: '#0f172a', opacity: busy ? 0.6 : 1 }}
+        onClick={handleArm}
+        disabled={busy}
       >
-        {buying ? 'Buying…' : `⚡ FP Buy${info?.floorPriceEth ? ` @ ${info.floorPriceEth.toFixed(4)} ETH` : ''}`}
+        {busy ? 'Arming…' : '⚡ Arm Sniper'}
       </button>
 
       <div style={styles.footNote}>
-        Buys the single cheapest active listing for this collection right now.
+        Runs persistently in the background — survives page closes and server restarts. Cancel anytime.
       </div>
+
+      {/* Active snipers */}
+      {active.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+            Active Snipers ({active.length})
+          </div>
+          {active.map((s) => (
+            <SniperRow key={s.id} sniper={s} onCancel={handleCancel} cancelling={cancelling.has(s.id)} fmtUsd={fmtUsd} />
+          ))}
+        </div>
+      )}
+
+      {/* Completed/cancelled snipers */}
+      {done.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+            Recent ({done.length})
+          </div>
+          {done.map((s) => (
+            <SniperRow key={s.id} sniper={s} onCancel={null} cancelling={false} fmtUsd={fmtUsd} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function InfoStat({ label, value, color }) {
+function SniperRow({ sniper, onCancel, cancelling, fmtUsd }) {
+  const statusColor = sniper.status === 'active' ? '#22c55e' : sniper.status === 'filled' ? '#6366f1' : '#475569';
+  const fills = sniper.fills || [];
   return (
-    <div>
-      <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: color || '#f1f5f9', fontFamily: 'JetBrains Mono, monospace' }}>{value}</div>
+    <div style={{ background: '#1e293b', borderRadius: 10, padding: '12px 14px', marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
+          <span style={{ fontWeight: 700, fontSize: 13, color: '#f1f5f9' }}>{sniper.collectionSlug}</span>
+          <span style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'JetBrains Mono, monospace' }}>
+            {sniper.minPriceEth}–{sniper.maxPriceEth} ETH
+          </span>
+          <span style={{ fontSize: 11, color: '#64748b' }}>×{sniper.quantity}</span>
+          <span style={{ fontSize: 11, color: GAS_SPEEDS[sniper.gasSpeed]?.color || '#64748b' }}>
+            {GAS_SPEEDS[sniper.gasSpeed]?.label || sniper.gasSpeed}
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: statusColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            {sniper.status}{fills.length > 0 ? ` (${sniper.quantityFilled || fills.length}/${sniper.quantity})` : ''}
+          </span>
+        </div>
+        {onCancel && (
+          <button
+            onClick={() => onCancel(sniper.id)}
+            disabled={cancelling}
+            style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', fontSize: 11, fontWeight: 700, cursor: 'pointer', opacity: cancelling ? 0.5 : 1, flexShrink: 0 }}
+          >
+            {cancelling ? '…' : 'Cancel'}
+          </button>
+        )}
+      </div>
+      {fills.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {fills.map((f, i) => (
+            <div key={i} style={{ fontSize: 11, color: '#86efac', fontFamily: 'JetBrains Mono, monospace' }}>
+              ✓ {f.priceEth} ETH — {f.txHash?.slice(0, 16)}…
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -322,6 +452,4 @@ const styles = {
   footNote: { fontSize: 11, color: '#475569' },
   error: { background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', color: '#f87171', fontSize: 13 },
   success: { background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '10px 14px', color: '#86efac', fontSize: 13 },
-  infoBox: { display: 'flex', gap: 14, alignItems: 'flex-start', background: '#1e293b', borderRadius: 10, padding: 14 },
-  colImg: { width: 56, height: 56, borderRadius: 8, objectFit: 'cover', flexShrink: 0 },
 };

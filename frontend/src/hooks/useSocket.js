@@ -115,6 +115,28 @@ export function useSocket() {
       ));
     });
 
+    // Sniper events
+    socket.on('sniper:fill', (d) => {
+      addLog('success', `Sniper filled: ${d.id} @ ${d.priceEth} ETH — tx ${d.txHash?.slice(0, 16)}…`);
+      setTrades((prev) => [{
+        type: 'buy',
+        collectionSlug: d.collectionSlug,
+        priceEth: d.priceEth,
+        txHash: d.txHash,
+        source: 'sniper',
+        timestamp: new Date().toISOString(),
+      }, ...prev]);
+    });
+    socket.on('sniper:done', (d) => {
+      addLog('success', `Sniper fully filled: ${d.collectionSlug}`);
+    });
+    socket.on('sniper:cancelled', (d) => {
+      addLog('info', `Sniper cancelled: ${d.id}`);
+    });
+    socket.on('sniper:error', (d) => {
+      addLog('error', `Sniper buy error (${d.id}): ${d.error}`);
+    });
+
     // Wallet
     socket.on('wallet:connected', (d) => {
       setWalletInfo(d);
