@@ -39,14 +39,18 @@ api.interceptors.response.use(
 const _keyPreview = (process.env.OPENSEA_API_KEY || '').slice(0, 6);
 logger.info(`OpenSea API key: ${_keyPreview ? `${_keyPreview}… (loaded)` : 'NOT SET — add OPENSEA_API_KEY in Railway Variables'}`);
 
-// Simple rate-limit helper: max 4 req/sec for free tier
-let lastCallTime = 0;
-async function rateLimitedCall(fn) {
-  const now = Date.now();
-  const gap = now - lastCallTime;
-  if (gap < 250) await new Promise((r) => setTimeout(r, 250 - gap));
-  lastCallTime = Date.now();
-  return fn();
+// Queued rate-limit helper: serialises all OpenSea calls with 300ms gap (~3 req/sec).
+// A simple time-check breaks under Promise.all — concurrent callers all read the same
+// lastCallTime before any of them updates it, so they all fire simultaneously.
+// The chain is kept alive even when individual calls throw, so errors propagate to
+// the caller but don't stall the queue.
+let _rateLimitChain = Promise.resolve();
+function rateLimitedCall(fn) {
+  const result = _rateLimitChain
+    .then(() => new Promise((r) => setTimeout(r, 300)))
+    .then(() => fn());
+  _rateLimitChain = result.catch(() => {}); // keep chain alive on error
+  return result;
 }
 
 // --- ETH/USD price (Binance primary, CoinGecko fallback, cached 5 min) ---
