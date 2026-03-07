@@ -15,6 +15,7 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
   const [refreshing, setRefreshing] = useState(false);
   const [nftImages, setNftImages] = useState({});      // { [k]: url | null | 'loading' }
   const [bulkMode, setBulkMode] = useState(false);
+  const [bulkAcceptMode, setBulkAcceptMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [bulkPrice, setBulkPrice] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -177,7 +178,38 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
     return next;
   });
 
-  const exitBulkMode = () => { setBulkMode(false); setSelected(new Set()); setBulkPrice(''); setBulkProgress(''); };
+  const exitBulkMode = () => { setBulkMode(false); setBulkAcceptMode(false); setSelected(new Set()); setBulkPrice(''); setBulkProgress(''); };
+
+  const handleBulkAcceptOffer = async () => {
+    const toAccept = (portfolio || []).filter((nft, i) => {
+      const k = cardKey(nft, i);
+      return selected.has(k) && nft.contractAddress && nft.tokenId && nft.collectionSlug;
+    });
+    if (!toAccept.length) return alert('No valid NFTs selected (need contract + token ID)');
+    if (!window.confirm(`Accept best offers for ${toAccept.length} NFT${toAccept.length > 1 ? 's' : ''}?\n\nThis sells each immediately on-chain at the current best offer price.`)) return;
+    setBulkBusy(true);
+    let done = 0, failed = 0;
+    for (const nft of toAccept) {
+      const i = portfolio.indexOf(nft);
+      const k = cardKey(nft, i);
+      setBulkProgress(`Accepting offer ${done + failed + 1} / ${toAccept.length}…`);
+      try {
+        await tradesApi.acceptOffer(nft.contractAddress, nft.tokenId, nft.collectionSlug, nft.chain || 'ethereum');
+        done++;
+      } catch (err) {
+        failed++;
+        console.error(`Bulk accept failed for ${nft.tokenId}:`, err.response?.data?.error || err.message);
+      }
+    }
+    setBulkBusy(false);
+    setBulkProgress('');
+    const updated = await portfolioApi.get();
+    if (setPortfolio) setPortfolio(updated);
+    exitBulkMode();
+    alert(failed === 0
+      ? `Accepted offers and sold ${done} NFT${done > 1 ? 's' : ''}!`
+      : `${done} sold, ${failed} failed — check console for details`);
+  };
 
   const handleBulkList = async () => {
     const price = parseFloat(bulkPrice);
@@ -227,10 +259,15 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
           <button style={styles.syncBtn} onClick={handleRefresh} disabled={refreshing}>
             {refreshing ? '...' : '↻ Refresh'}
           </button>
-          {!bulkMode ? (
-            <button style={{ ...styles.syncBtn, color: '#a855f7', borderColor: '#7c3aed' }} onClick={() => setBulkMode(true)} disabled={!portfolio?.length}>
-              ☐ Bulk List
-            </button>
+          {!bulkMode && !bulkAcceptMode ? (
+            <>
+              <button style={{ ...styles.syncBtn, color: '#a855f7', borderColor: '#7c3aed' }} onClick={() => setBulkMode(true)} disabled={!portfolio?.length}>
+                ☐ Bulk List
+              </button>
+              <button style={{ ...styles.syncBtn, color: '#22c55e', borderColor: '#16a34a' }} onClick={() => setBulkAcceptMode(true)} disabled={!portfolio?.length}>
+                ⚡ Bulk Accept
+              </button>
+            </>
           ) : (
             <button style={{ ...styles.syncBtn, color: '#ef4444', borderColor: '#ef4444' }} onClick={exitBulkMode}>
               ✕ Cancel Bulk
@@ -272,10 +309,10 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
               <div
                 key={k}
                 style={{ ...styles.card, ...(isSelected ? styles.cardSelected : {}) }}
-                onClick={bulkMode && sellable ? () => toggleSelected(k) : undefined}
+                onClick={(bulkMode || bulkAcceptMode) && sellable ? () => toggleSelected(k) : undefined}
               >
                 {/* Bulk mode checkbox overlay */}
-                {bulkMode && (
+                {(bulkMode || bulkAcceptMode) && (
                   <div style={styles.checkboxOverlay}>
                     <div style={{ ...styles.checkbox, ...(isSelected ? styles.checkboxChecked : {}) }}>
                       {isSelected && '✓'}
@@ -336,7 +373,7 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
                   </div>
 
                   {/* Sell buttons — hidden in bulk mode or when an action is open */}
-                  {!mode && !bulkMode && (
+                  {!mode && !bulkMode && !bulkAcceptMode && (
                     <div style={styles.btnRow}>
                       {sellable ? (
                         <button style={styles.btnOffer} onClick={() => openAction(k, nft, 'offer')}>
@@ -466,6 +503,27 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
                 disabled={!selected.size || !bulkPrice || bulkBusy}
               >
                 {bulkBusy ? (bulkProgress || 'Listing…') : `List ${selected.size || ''} for ${bulkPrice || '?'} ETH each`}
+              </button>
+              <button style={styles.btnX} onClick={exitBulkMode}>✕</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk accept offer bottom action bar */}
+      {bulkAcceptMode && (
+        <div style={styles.bulkBar}>
+          <div style={styles.bulkBarInner}>
+            <span style={styles.bulkCount}>
+              {selected.size} NFT{selected.size !== 1 ? 's' : ''} selected
+            </span>
+            <div style={styles.bulkInputRow}>
+              <button
+                style={{ ...styles.btnConfirm, background: '#16a34a', opacity: (!selected.size || bulkBusy) ? 0.5 : 1 }}
+                onClick={handleBulkAcceptOffer}
+                disabled={!selected.size || bulkBusy}
+              >
+                {bulkBusy ? (bulkProgress || 'Accepting…') : `⚡ Accept Best Offers for ${selected.size || 0} NFT${selected.size !== 1 ? 's' : ''}`}
               </button>
               <button style={styles.btnX} onClick={exitBulkMode}>✕</button>
             </div>

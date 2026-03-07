@@ -387,7 +387,7 @@ async function getCollectionFees(slug) {
       15
     );
     const royaltyFee = Math.min(enforcedRoyaltyFee + optionalRoyaltyFee, 15);
-    const fees = { marketplaceFee, royaltyFee, enforcedRoyaltyFee, optionalRoyaltyFee };
+    const fees = { marketplaceFee, royaltyFee, enforcedRoyaltyFee, optionalRoyaltyFee, totalSupply: col?.total_supply || null };
     _feesCache.set(slug, { fees, fetchedAt: Date.now() });
     return fees;
   } catch {
