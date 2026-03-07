@@ -190,8 +190,6 @@ async function getCollectionStats(slug) {
   return rateLimitedCall(async () => {
     try {
       const res = await api.get(`/collections/${slug}/stats`);
-      // DEBUG: log the total object so we can confirm the field names
-      logger.debug(`[stats.total] ${slug}: ${JSON.stringify(res.data?.total)}`);
       return res.data;
     } catch (err) {
       logger.error(`OpenSea getCollectionStats(${slug}) error: ${err.message}`);
@@ -326,8 +324,6 @@ async function getCollection(slug) {
   return rateLimitedCall(async () => {
     try {
       const res = await api.get(`/collections/${slug}`);
-      // DEBUG: confirm total_supply field name
-      logger.debug(`[collection] ${slug}: total_supply=${res.data?.total_supply}, supply=${res.data?.supply}`);
       return res.data;
     } catch (err) {
       logger.error(`OpenSea getCollection(${slug}) error: ${err.message}`);

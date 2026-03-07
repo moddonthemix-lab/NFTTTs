@@ -90,7 +90,7 @@ async function scanForOpportunities() {
         const sevenDayInterval = stats.intervals?.find((i) => i.interval === 'seven_day') || {};
         const oneHourInterval = stats.intervals?.find((i) => i.interval === 'one_hour') || {};
         const oneDayVolume = oneDayInterval.volume || 0;
-        const totalSupply = stats.total?.count || col?.total_supply || null;
+        const totalSupply = col?.total_supply || stats.total?.count || null;
         const numOwners   = stats.total?.num_owners || null;
         // Realistic exit = avg sale price (what buyers pay), not floor (cheapest ask)
         const avgSalePrice =

@@ -287,7 +287,7 @@ app.get('/api/scanner/info/:slug', async (req, res) => {
       floorPriceEth: stats?.total?.floor_price || null,
       volume24hEth: stats?.intervals?.find((i) => i.interval === 'one_day')?.volume || null,
       numOwners: stats?.total?.num_owners || null,
-      totalSupply: stats?.total?.count || col?.total_supply || null,
+      totalSupply: col?.total_supply || stats?.total?.count || null,
       bestOfferEth: bestOffer,
       fees: fees ? {
         marketplaceFee: fees.marketplaceFee,
