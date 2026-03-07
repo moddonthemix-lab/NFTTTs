@@ -193,6 +193,15 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
 
   const handleScanNow = () => botApi.scan().catch((e) => alert(e.message));
 
+  // Trigger a scan immediately on mount and then every 120s (mirrors the backend auto-scan cadence)
+  React.useEffect(() => {
+    botApi.scan().catch(() => {});
+    const interval = setInterval(() => {
+      botApi.scan().catch(() => {});
+    }, 120_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const [searchResults, setSearchResults] = useState([]);   // list of collection objects from search
   const [scannedResult, setScannedResult] = useState(null); // detailed scan of one picked collection
   const [scanningSlug, setScanningSlug] = useState(null);   // which slug is being deep-scanned
@@ -495,8 +504,8 @@ export default function Scanner({ opportunities, scanning, ethPrice }) {
                       &nbsp;·&nbsp;
                       Vol {(group.oneDayVolume || 0).toFixed(2)} ETH
                       {group.oneDayChange != null && <>&nbsp;{fmtChange(group.oneDayChange)}</>}
-                      {group.totalSupply != null && <>&nbsp;·&nbsp;{fmtCount(group.totalSupply)} items</>}
                       {group.numOwners  != null && <>&nbsp;·&nbsp;{fmtCount(group.numOwners)} holders</>}
+                      {group.totalSupply != null && <>&nbsp;·&nbsp;{fmtCount(group.totalSupply)} items</>}
                     </div>
                     {group.floorPriceEth > 0 && (
                       <div style={styles.groupEst}>
