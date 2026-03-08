@@ -53,6 +53,17 @@ function rateLimitedCall(fn) {
   return result;
 }
 
+// Separate queue for interactive/user-triggered calls (NFT images, best offers, etc.)
+// These must not queue behind a long batch scan — they get their own 350ms-gap queue.
+let _interactiveChain = Promise.resolve();
+function interactiveCall(fn) {
+  const result = _interactiveChain
+    .then(() => new Promise((r) => setTimeout(r, 350)))
+    .then(() => fn());
+  _interactiveChain = result.catch(() => {});
+  return result;
+}
+
 // --- ETH/USD price (Binance primary, CoinGecko fallback, cached 5 min) ---
 let _ethPriceUsd = null;
 let _ethPriceAt = 0;
@@ -223,7 +234,7 @@ async function getCheapestListings(slug, limit = 20) {
  * Get a single NFT's details
  */
 async function getNFT(contractAddress, tokenId, chain = 'ethereum') {
-  return rateLimitedCall(async () => {
+  return interactiveCall(async () => {
     try {
       const res = await api.get(`/chain/${chain}/contract/${contractAddress}/nfts/${tokenId}`);
       return res.data.nft || null;
@@ -287,7 +298,7 @@ async function getBestListing(slug, tokenId) {
  */
 async function getCollectionBestOffer(slug) {
   try {
-    const res = await rateLimitedCall(() =>
+    const res = await interactiveCall(() =>
       api.get(`/offers/collection/${slug}`, {
         params: { limit: 1, order_by: 'eth_price', order_direction: 'desc' },
       })
