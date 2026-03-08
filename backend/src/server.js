@@ -669,18 +669,15 @@ app.post('/api/trade/accept-offer', async (req, res) => {
   }
 });
 
-// Fetch the best offer price for a specific NFT (for display in Portfolio)
+// Fetch the best collection-level offer for display in Portfolio.
+// Uses getCollectionBestOffer (floor bid — any NFT in the collection can sell at this price)
+// rather than token-specific offers, which can include inflated trait bids.
 app.get('/api/portfolio/:contractAddress/:tokenId/best-offer', async (req, res) => {
   try {
-    const { contractAddress, tokenId } = req.params;
     const { slug, chain = 'ethereum' } = req.query;
     if (!slug) return res.status(400).json({ error: 'slug query param required' });
-    const offerRes = await openSeaApi.getOffers(slug, tokenId);
-    const best = offerRes?.[0];
-    const priceEth = best?.current_price
-      ? parseFloat(require('ethers').formatEther(best.current_price))
-      : null;
-    res.json({ priceEth, orderHash: best?.order_hash || null });
+    const priceEth = await openSeaApi.getCollectionBestOffer(slug);
+    res.json({ priceEth: priceEth || null, orderHash: null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

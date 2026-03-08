@@ -298,8 +298,13 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
             const offerData = bestOffers[k];
             const feeData = fees[k];
             const sellable = canSell(nft);
-            const profit = nft.floorPriceEth && nft.buyPriceEth
-              ? ((nft.floorPriceEth - nft.buyPriceEth) / nft.buyPriceEth * 100)
+            // Profit % = realistic net-of-fees exit vs what was paid.
+            // Prefer collection best offer (floor bid — guaranteed exit) if fetched,
+            // else fall back to floor price. Both are adjusted for ~7.5% total fees
+            // (1% marketplace + ~5-7% royalty) so the number reflects actual proceeds.
+            const exitPrice = offerData?.priceEth ?? nft.floorPriceEth;
+            const profit = exitPrice && nft.buyPriceEth
+              ? (((exitPrice * 0.925) - nft.buyPriceEth) / nft.buyPriceEth * 100)
               : null;
 
             const imgSrc = nft.collectionImage || (nftImages[k] !== 'loading' ? nftImages[k] : null);
@@ -357,11 +362,17 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
                       <MetaItem
                         label="Floor"
                         value={`${fmt(nft.floorPriceEth)} ETH`}
-                        sub={profit != null ? (
-                          <span style={{ color: profit >= 0 ? '#22c55e' : '#ef4444' }}>
+                      />
+                    )}
+                    {profit != null && (
+                      <MetaItem
+                        label={offerData?.priceEth ? 'P&L (bid)' : 'P&L (floor)'}
+                        value={
+                          <span style={{ color: profit >= 0 ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
                             {profit >= 0 ? '+' : ''}{profit.toFixed(1)}%
                           </span>
-                        ) : null}
+                        }
+                        sub="after fees"
                       />
                     )}
                     {nft.acquiredAt && (
