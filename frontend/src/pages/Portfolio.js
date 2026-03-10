@@ -242,18 +242,45 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
       : `${done} listed, ${failed} failed — check console for details`);
   };
 
-  const totalCost = (portfolio || []).reduce((sum, n) => sum + (n.buyPriceEth || 0), 0);
-  const canSell = (nft) => !!(nft.contractAddress && nft.tokenId);
+  const totalCost  = (portfolio || []).reduce((sum, n) => sum + (n.buyPriceEth || 0), 0);
+  const totalValue = (portfolio || []).reduce((sum, n) => sum + (n.floorPriceEth || 0), 0);
+  const totalPnlEth = (portfolio || []).reduce((sum, n) => {
+    const exit = n.floorPriceEth;
+    if (!exit || !n.buyPriceEth) return sum;
+    return sum + (exit * 0.925 - n.buyPriceEth);
+  }, 0);
+  const totalPnlPct = totalCost > 0 ? (totalPnlEth / totalCost) * 100 : null;
 
   return (
     <div style={styles.page}>
       <div style={styles.header}>
         <div>
           <h1 style={styles.h1}>Portfolio</h1>
-          <p style={styles.sub}>
-            {(portfolio || []).length} NFTs held — cost: {fmt(totalCost)} ETH
-            {ethPrice && totalCost > 0 && <span style={{ color: '#64748b' }}> ({fmtUsd(totalCost)})</span>}
-          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px', marginTop: 4, fontSize: 13, color: '#94a3b8' }}>
+            <span>{(portfolio || []).length} NFTs</span>
+            <span>
+              Cost: <strong style={{ color: '#f1f5f9' }}>{fmt(totalCost, 4)} ETH</strong>
+              {ethPrice && totalCost > 0 && <span style={{ color: '#64748b' }}> ({fmtUsd(totalCost)})</span>}
+            </span>
+            {totalValue > 0 && (
+              <span>
+                Value: <strong style={{ color: '#f1f5f9' }}>{fmt(totalValue, 4)} ETH</strong>
+                {ethPrice && <span style={{ color: '#64748b' }}> ({fmtUsd(totalValue)})</span>}
+              </span>
+            )}
+            {totalPnlPct != null && (
+              <span>
+                P&amp;L:{' '}
+                <strong style={{ color: totalPnlEth >= 0 ? '#22c55e' : '#ef4444' }}>
+                  {totalPnlEth >= 0 ? '+' : ''}{fmt(totalPnlEth, 4)} ETH
+                </strong>
+                <span style={{ color: totalPnlEth >= 0 ? '#22c55e' : '#ef4444', marginLeft: 4 }}>
+                  ({totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(1)}%)
+                </span>
+                <span style={{ color: '#475569', fontSize: 11, marginLeft: 4 }}>after fees</span>
+              </span>
+            )}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button style={styles.syncBtn} onClick={handleRefresh} disabled={refreshing}>
