@@ -74,7 +74,7 @@ function AppInner() {
               path="/scanner"
               element={<Scanner opportunities={opportunities} scanning={scanning} ethPrice={ethPrice} />}
             />
-            <Route path="/favorites" element={<Favorites />} />
+            <Route path="/favorites" element={<Favorites opportunities={opportunities} scanning={scanning} />} />
             <Route
               path="/portfolio"
               element={<Portfolio portfolio={portfolio} setPortfolio={setPortfolio} ethPrice={ethPrice} />}

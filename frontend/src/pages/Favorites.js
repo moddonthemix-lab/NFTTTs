@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import OpportunityCard from '../components/OpportunityCard';
 import { favoritesApi, tradesApi, bidsApi, scannerApi } from '../utils/api';
 
-export default function Favorites() {
+export default function Favorites({ opportunities = [], scanning = false }) {
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
@@ -39,6 +39,75 @@ export default function Favorites() {
     const interval = setInterval(refreshFavorites, 90_000); // refresh every 90s
     return () => clearInterval(interval);
   }, [refreshFavorites]);
+
+  // When a new scan completes, update saved NFT favorites with fresh prices/scores
+  const prevOppsRef = React.useRef(null);
+  useEffect(() => {
+    if (!opportunities?.length || opportunities === prevOppsRef.current) return;
+    prevOppsRef.current = opportunities;
+
+    setFavorites((prev) => prev.map((fav) => {
+      if (fav.type === 'collection') return fav;
+      const match = opportunities.find((o) =>
+        o.id === fav.id ||
+        (o.collectionSlug === fav.collectionSlug && o.tokenId === fav.tokenId && o.contractAddress === fav.contractAddress)
+      );
+      if (!match) return fav;
+      return {
+        ...fav,
+        floorPriceEth:    match.floorPriceEth,
+        score:            match.score,
+        dealGrade:        match.dealGrade,
+        flipEstimate:     match.flipEstimate,
+        oneDayVolume:     match.oneDayVolume,
+        listingPriceEth:  match.listingPriceEth,
+        numOwners:        match.numOwners,
+        totalSupply:      match.totalSupply,
+      };
+    }));
+  }, [opportunities]);
+
+  // When a scan finishes, re-fetch listings for any currently-expanded collection favorites
+  const prevScanningRef = React.useRef(false);
+  useEffect(() => {
+    const wasScanning = prevScanningRef.current;
+    prevScanningRef.current = scanning;
+    if (!wasScanning || scanning) return; // only fires on scanning → false transition
+
+    // Re-fetch listings for any currently-expanded collection favorites immediately
+    setExpandedCollections((expanded) => {
+      expanded.forEach((slug) => {
+        const colFav = favorites.find((f) => f.type === 'collection' && f.collectionSlug === slug);
+        if (!colFav) return;
+        const colChain = colFav.chain || 'ethereum';
+        setColListings((p) => ({ ...p, [slug]: { status: 'loading', results: [] } }));
+        scannerApi.scanCollection(slug, colChain)
+          .then((data) => {
+            const results = (data?.results || []).slice(0, 10).map((r, i) => ({
+              id: r.listing?.order_hash || `${slug}_fav_${i}`,
+              collectionSlug: slug,
+              collectionName: data.collection?.name || slug,
+              collectionImage: r.nftImageUrl || data.collection?.image_url || '',
+              listingPriceEth: r.priceEth,
+              floorPriceEth: data.stats?.total?.floor_price || 0,
+              score: r.score,
+              dealGrade: r.dealGrade,
+              liquidity: data.liquidity,
+              bestOfferEth: data.bestOfferEth || null,
+              isRare: r.isRare || false,
+              rarityRank: r.rarityRank,
+              rarityTotal: r.rarityTotal,
+              flipEstimate: r.flipEstimate,
+              oneDayVolume: data.stats?.intervals?.find((iv) => iv.interval === 'one_day')?.volume || 0,
+              listing: r.listing,
+            }));
+            setColListings((p) => ({ ...p, [slug]: { status: 'done', results } }));
+          })
+          .catch(() => setColListings((p) => ({ ...p, [slug]: { status: 'error', results: [] } })));
+      });
+      return expanded; // don't change the set
+    });
+  }, [scanning, favorites]);
 
   const toggleCollection = (slug, isColFav = false) => {
     setExpandedCollections((prev) => {
@@ -178,6 +247,7 @@ export default function Favorites() {
           <p style={styles.sub}>Saved collections and NFT opportunities</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {scanning && <span style={{ fontSize: 12, color: '#f59e0b', animation: 'pulse 1s infinite' }}>⟳ Scanning…</span>}
           {favorites.length > 0 && <span style={styles.count}>{favorites.length} saved</span>}
           <select style={styles.select} value={sort} onChange={(e) => setSort(e.target.value)}>
             <option value="saved">Sort: Date Saved</option>
