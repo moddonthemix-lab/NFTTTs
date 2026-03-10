@@ -229,7 +229,8 @@ function getSnipers() { const db = readDb(); return db.snipers || []; }
 
 function addSniper(sniper) {
   const db = readDb();
-  db.snipers.push({ ...sniper, createdAt: new Date().toISOString(), status: 'active', fills: [], quantityFilled: 0 });
+  const id = `sniper_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  db.snipers.push({ ...sniper, id, createdAt: new Date().toISOString(), status: 'active', fills: [], quantityFilled: 0 });
   writeDb(db);
   return db.snipers[db.snipers.length - 1];
 }

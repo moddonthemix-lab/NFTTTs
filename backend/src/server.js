@@ -815,7 +815,10 @@ app.post('/api/snipers', (req, res) => {
 });
 
 app.delete('/api/snipers/:id', (req, res) => {
-  sniperService.cancel(req.params.id);
+  const id = req.params.id;
+  const exists = db.getSnipers().find((s) => s.id === id);
+  if (!exists) return res.status(404).json({ error: `Sniper ${id} not found` });
+  sniperService.cancel(id);
   res.json({ success: true });
 });
 
