@@ -4,13 +4,53 @@ const logger = require('../utils/logger');
 
 // Try these mint signatures in order — covers the vast majority of real contracts
 const MINT_SIGNATURES = [
+  // ── Standard ERC721 patterns ──────────────────────────────────────────────
   { fn: 'function mint(uint256 quantity) payable',                  args: (qty, addr) => [BigInt(qty)] },
   { fn: 'function mint(uint256 amount) payable',                    args: (qty, addr) => [BigInt(qty)] },
   { fn: 'function publicMint(uint256 quantity) payable',            args: (qty, addr) => [BigInt(qty)] },
   { fn: 'function mintPublic(uint256 quantity) payable',            args: (qty, addr) => [BigInt(qty)] },
   { fn: 'function mint(address to, uint256 quantity) payable',      args: (qty, addr) => [addr, BigInt(qty)] },
+  { fn: 'function mint(address to, uint256 amount) payable',        args: (qty, addr) => [addr, BigInt(qty)] },
+  { fn: 'function safeMint(address to, uint256 quantity) payable',  args: (qty, addr) => [addr, BigInt(qty)] },
   { fn: 'function safeMint(address to) payable',                    args: (qty, addr) => [addr] },
-  { fn: 'function mint() payable',                                  args: (qty, addr) => [] },
+  { fn: 'function mint() payable',                                  args: () => [] },
+  { fn: 'function freeMint(uint256 quantity)',                       args: (qty) => [BigInt(qty)] },
+  { fn: 'function freeMint()',                                       args: () => [] },
+
+  // ── Claim / allowlist patterns (no proof — public phase) ─────────────────
+  { fn: 'function claim(uint256 quantity) payable',                 args: (qty) => [BigInt(qty)] },
+  { fn: 'function claim(uint256 amount) payable',                   args: (qty) => [BigInt(qty)] },
+  { fn: 'function publicClaim(uint256 quantity) payable',           args: (qty) => [BigInt(qty)] },
+  { fn: 'function claimPublic(uint256 quantity) payable',           args: (qty) => [BigInt(qty)] },
+
+  // ── Thirdweb ERC721Drop — public phase (no allowlist proof) ──────────────
+  // claim(address receiver, uint256 quantity, address currency, uint256 pricePerToken, (bytes32[],uint256,uint256,address) allowlistProof, bytes data)
+  {
+    fn: 'function claim(address _receiver, uint256 _quantity, address _currency, uint256 _pricePerToken, (bytes32[] proof, uint256 quantityLimitPerWallet, uint256 pricePerToken, address currency) _allowlistProof, bytes _data) payable',
+    args: (qty, addr, priceWei) => [
+      addr,
+      BigInt(qty),
+      '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE', // ETH sentinel
+      priceWei,
+      { proof: [], quantityLimitPerWallet: BigInt(0), pricePerToken: BigInt(2) ** BigInt(256) - BigInt(1), currency: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE' },
+      '0x',
+    ],
+  },
+
+  // ── Manifold ERC721 / ERC1155 public mint ────────────────────────────────
+  { fn: 'function mint(uint256 instanceId, uint32 mintCount) payable', args: (qty) => [BigInt(0), qty] },
+  { fn: 'function mintBatch(address to, uint16 count) payable',        args: (qty, addr) => [addr, qty] },
+
+  // ── Zora minter (fixed price) ─────────────────────────────────────────────
+  // mintWithRewards(address minter, uint256 tokenId, uint256 quantity, bytes minterArgs, address mintReferral)
+  {
+    fn: 'function mintWithRewards(address minter, uint256 tokenId, uint256 quantity, bytes minterArguments, address mintReferral) payable',
+    args: (qty, addr) => [addr, BigInt(0), BigInt(qty), '0x', '0x0000000000000000000000000000000000000000'],
+  },
+
+  // ── Generic fallbacks ─────────────────────────────────────────────────────
+  { fn: 'function purchase(uint256 quantity) payable',               args: (qty) => [BigInt(qty)] },
+  { fn: 'function buy(uint256 quantity) payable',                    args: (qty) => [BigInt(qty)] },
 ];
 
 /**
@@ -27,8 +67,10 @@ async function mintNFT(contractAddress, quantity = 1, pricePerNftEth = 0, chain 
   const wallet = walletUtils.getWalletForChain(chain);
   if (!wallet) throw new Error('No wallet connected');
 
-  const valueWei = ethers.parseEther((pricePerNftEth * quantity).toFixed(18));
-  logger.info(`[mint][${chain}] Attempting to mint ${quantity}x from ${contractAddress} (${pricePerNftEth} ETH each, total ${(pricePerNftEth * quantity).toFixed(6)} ETH)`);
+  const totalEth = pricePerNftEth * quantity;
+  const valueWei = ethers.parseEther(totalEth.toFixed(18));
+  const priceWei = ethers.parseEther(pricePerNftEth.toFixed(18));
+  logger.info(`[mint][${chain}] Attempting to mint ${quantity}x from ${contractAddress} (${pricePerNftEth} ETH each, total ${totalEth.toFixed(6)} ETH)`);
 
   // Custom calldata path — user knows exactly what to call
   if (customCalldata) {
@@ -45,8 +87,8 @@ async function mintNFT(contractAddress, quantity = 1, pricePerNftEth = 0, chain 
     try {
       const contract = new ethers.Contract(contractAddress, [fn], wallet);
       const fnName = fn.match(/function (\w+)/)[1];
-      const callArgs = args(quantity, wallet.address);
-      logger.info(`[mint] Trying ${fnName}(${callArgs.join(', ')})`);
+      const callArgs = args(quantity, wallet.address, priceWei);
+      logger.info(`[mint] Trying ${fnName}(${callArgs.map(a => typeof a === 'object' && a !== null && !Array.isArray(a) ? '[struct]' : String(a)).join(', ')})`);
       const tx = await contract[fnName](...callArgs, { value: valueWei });
       logger.info(`[mint] TX sent: ${tx.hash} — waiting for confirmation...`);
       const receipt = await tx.wait();

@@ -90,6 +90,7 @@ function MintPanel({ ethPrice }) {
   const [selectedStage, setSelectedStage] = useState('');
   const [quantity, setQuantity]           = useState(1);
   const [price, setPrice]                 = useState('');   // editable, pre-filled from phase
+  const [manualContract, setManualContract] = useState(''); // direct contract entry
   const [calldata, setCalldata]           = useState('');
   const [advanced, setAdvanced]           = useState(false);
 
@@ -102,6 +103,8 @@ function MintPanel({ ethPrice }) {
   const totalEth = (parseFloat(price) || 0) * quantity;
 
   const selectedPhase = drop?.phases?.find((p) => p.stage === selectedStage) || null;
+  // Resolved contract: from drop lookup OR from manual entry
+  const resolvedContract = drop?.contractAddress || manualContract.trim();
 
   const handleLookup = async () => {
     if (!dropInput.trim()) return;
@@ -125,13 +128,12 @@ function MintPanel({ ethPrice }) {
   }, [selectedStage]);
 
   const handleMint = async () => {
-    const contractAddr = drop?.contractAddress;
-    if (!contractAddr || !/^0x[a-fA-F0-9]{40}$/.test(contractAddr))
-      return setError('No valid contract address — look up a drop first');
+    if (!resolvedContract || !/^0x[a-fA-F0-9]{40}$/.test(resolvedContract))
+      return setError('Enter a valid contract address (0x…) or look up a drop above');
     if (quantity < 1 || quantity > 50) return setError('Quantity must be between 1 and 50');
     setError(null); setResult(null); setBusy(true);
     try {
-      const res = await mintApi.mint(contractAddr, quantity, parseFloat(price) || 0, drop.chain || chain, calldata || null);
+      const res = await mintApi.mint(resolvedContract, quantity, parseFloat(price) || 0, drop?.chain || chain, calldata || null);
       setResult(res);
     } catch (err) {
       setError(err.response?.data?.error || err.message);
@@ -283,21 +285,26 @@ function MintPanel({ ethPrice }) {
         </>
       )}
 
-      {/* ── Step 3: Mint form (only once drop + phase are chosen) ── */}
-      {(drop || !drop) && (
-        <>
-          {!drop && (
-            <div style={styles.field}>
-              <label style={styles.label}>Contract Address <span style={{ color: '#64748b', fontWeight: 400 }}>(or look up a drop above)</span></label>
-              <input
-                style={styles.input}
-                placeholder="0x... paste directly if you know it"
-                value={drop?.contractAddress || ''}
-                readOnly={!!drop}
-                onChange={() => {}}
-              />
-            </div>
-          )}
+      {/* ── Step 3: Mint form ── */}
+      <>
+        {/* Contract address — editable when no drop loaded, read-only when drop found */}
+        <div style={styles.field}>
+          <label style={styles.label}>
+            Contract Address
+            {drop?.contractAddress
+              ? <span style={{ color: '#22c55e', fontWeight: 400, marginLeft: 6 }}>✓ from drop</span>
+              : <span style={{ color: '#64748b', fontWeight: 400, marginLeft: 6 }}>(or look up a drop above)</span>}
+          </label>
+          <input
+            style={{ ...styles.input, opacity: drop?.contractAddress ? 0.7 : 1, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}
+            placeholder="0x… paste contract address directly"
+            value={drop?.contractAddress || manualContract}
+            readOnly={!!drop?.contractAddress}
+            onChange={(e) => !drop?.contractAddress && setManualContract(e.target.value.trim())}
+          />
+        </div>
+        {(drop || true) && (
+          <>
 
           <div style={styles.row}>
             <div style={styles.field}>
@@ -371,13 +378,13 @@ function MintPanel({ ethPrice }) {
             </div>
           )}
 
-          {!drop && (
-            <div style={styles.footNote}>
-              Auto-detects common mint functions. Use "Look Up" above to load drop phases automatically.
-            </div>
-          )}
+          <div style={styles.footNote}>
+            Auto-detects common mint functions (ERC721, Thirdweb, Manifold, Zora, claim patterns).
+            If auto-detect fails, paste the raw calldata in Advanced.
+          </div>
         </>
-      )}
+        )}
+      </>
     </div>
   );
 }
