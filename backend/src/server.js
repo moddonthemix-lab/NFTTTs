@@ -222,6 +222,62 @@ io.on('connection', (socket) => {
 // REST API Routes
 // ============================================================
 
+
+// --- Claw Command (OpenSea MCP + Claude AI chat) ---
+app.post('/api/claw-command', async (req, res) => {
+  try {
+    const { prompt, history = [] } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const mcpToken = process.env.OPENSEA_MCP_TOKEN;
+    if (!anthropicKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set' });
+    if (!mcpToken) return res.status(500).json({ error: 'OPENSEA_MCP_TOKEN not set' });
+
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: anthropicKey });
+
+    // Build message history + new prompt
+    const messages = [
+      ...history.map((m) => ({ role: m.role, content: m.content })),
+      { role: 'user', content: prompt },
+    ];
+
+    const response = await client.beta.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      system: `You are a sharp NFT trading assistant embedded in a claw machine trading bot.
+You have live access to OpenSea data. Help the user research collections, check floor prices,
+analyze mint opportunities, evaluate bids, and spot trends. Be concise and direct —
+give numbers and facts, skip fluff. When you find mint opportunities, highlight:
+collection name, mint price, supply, chain, and whether it looks worth it.`,
+      messages,
+      mcp_servers: [
+        {
+          type: 'url',
+          url: 'https://mcp.opensea.io/sse',
+          name: 'opensea',
+          authorization_token: mcpToken,
+        },
+      ],
+      tools: [{ type: 'mcp_toolset', mcp_server_name: 'opensea' }],
+      betas: ['mcp-client-2025-11-20'],
+    });
+
+    const textBlocks = response.content.filter((c) => c.type === 'text');
+    const toolUses = response.content.filter((c) => c.type === 'tool_use');
+
+    res.json({
+      reply: textBlocks.map((t) => t.text).join('\n'),
+      toolsUsed: toolUses.map((t) => t.name),
+      stopReason: response.stop_reason,
+    });
+  } catch (err) {
+    logger.error(`[ClawCommand] ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- ETH/USD price ---
 app.get('/api/ethprice', async (req, res) => {
   const usd = await getEthPriceUsd();

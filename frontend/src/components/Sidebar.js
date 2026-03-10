@@ -12,6 +12,7 @@ const NAV = [
   { path: '/wallet', label: 'Wallet', icon: '◎' },
   { path: '/whales', label: 'Whale Tracker', icon: '◬' },
   { path: '/claw', label: 'The Claw', icon: '✦' },
+  { path: '/claw-command', label: 'Claw Command', icon: '🦾' },
   { path: '/sender', label: 'Sender', icon: '⇥' },
   { path: '/logs', label: 'Logs', icon: '▤' },
 ];

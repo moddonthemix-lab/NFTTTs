@@ -14,6 +14,7 @@ import Favorites from './pages/Favorites';
 import WhaleTracker from './pages/WhaleTracker';
 import TheClaw from './pages/TheClaw';
 import Sender from './pages/Sender';
+import ClawCommand from './pages/ClawCommand';
 import { useSocket } from './hooks/useSocket';
 import { ethPriceApi } from './utils/api';
 
@@ -101,6 +102,7 @@ function AppInner() {
             />
             <Route path="/whales" element={<WhaleTracker ethPrice={ethPrice} />} />
             <Route path="/claw" element={<TheClaw ethPrice={ethPrice} />} />
+            <Route path="/claw-command" element={<ClawCommand />} />
             <Route path="/sender" element={<Sender />} />
           </Routes>
         </main>
