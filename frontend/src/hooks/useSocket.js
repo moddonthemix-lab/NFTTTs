@@ -102,6 +102,10 @@ export function useSocket() {
     socket.on('portfolio:sync', (d) => {
       if (d.portfolio) setPortfolio(d.portfolio);
     });
+    // Bid pruner removed stale/expired/cancelled bids
+    socket.on('bids:updated', (d) => {
+      if (d.bids) setBids(d.bids);
+    });
     socket.on('trade:list', (d) => {
       addLog('info', `Listed: ${d.collectionSlug || ''} #${d.tokenId} for ${d.priceEth} ETH`);
       setTrades((prev) => [{

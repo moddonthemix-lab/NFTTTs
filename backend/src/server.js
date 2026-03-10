@@ -154,6 +154,41 @@ async function checkBidFills() {
 // Run every 2 minutes
 setInterval(checkBidFills, 2 * 60 * 1000);
 
+// --- Bid pruner: remove bids that are no longer active on OpenSea ---
+async function pruneStaleBids() {
+  const bids = db.getBids();
+  if (!bids.length) return;
+  const now = Math.floor(Date.now() / 1000);
+  let anyRemoved = false;
+  for (const bid of bids) {
+    // Fast path: check expiry from stored endTime before hitting the API
+    if (bid.endTime && bid.endTime < now) {
+      logger.info(`[BidPruner] Expired bid removed: ${bid.collectionSlug} (${bid.orderHash?.slice(0, 12)}…)`);
+      db.removeBidByOrderHash(bid.orderHash);
+      anyRemoved = true;
+      continue;
+    }
+    if (!bid.orderHash) continue;
+    try {
+      const status = await openSeaApi.getOrderStatus(bid.orderHash, bid.chain || 'ethereum');
+      if (status === 'cancelled' || status === 'filled' || status === 'expired') {
+        logger.info(`[BidPruner] Removing ${status} bid: ${bid.collectionSlug} (${bid.orderHash.slice(0, 12)}…)`);
+        db.removeBidByOrderHash(bid.orderHash);
+        anyRemoved = true;
+      }
+    } catch (err) {
+      logger.warn(`[BidPruner] ${err.message}`);
+    }
+    // Small delay between checks to avoid rate-limit spikes
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  if (anyRemoved) io.emit('bids:updated', { bids: db.getBids() });
+}
+// Run every 5 minutes
+setInterval(pruneStaleBids, 5 * 60 * 1000);
+// Also run once shortly after startup to clean up any stale bids from last session
+setTimeout(pruneStaleBids, 30 * 1000);
+
 // --- Socket.IO connection ---
 io.on('connection', (socket) => {
   logger.info(`Client connected: ${socket.id}`);

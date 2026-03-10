@@ -610,6 +610,32 @@ async function getDropInfo(slugOrUrl, walletAddress = null, chain = 'ethereum') 
   };
 }
 
+/**
+ * Check if a Seaport order is still active on OpenSea.
+ * Returns 'active' | 'cancelled' | 'filled' | 'expired' | 'unknown'
+ */
+async function getOrderStatus(orderHash, chain = 'ethereum') {
+  try {
+    const res = await api.get(`/orders/${chain}/seaport/offers/${orderHash}`);
+    const order = res.data?.order;
+    if (!order) return 'unknown';
+    const status = order.order_type === 'criteria'
+      ? order.maker_asset_bundle?.assets?.[0]?.order_data?.v1_order?.cancelled
+      : null;
+    // OpenSea returns closing_date and cancelled fields
+    if (order.cancelled) return 'cancelled';
+    if (order.finalized) return 'filled';
+    const expiry = order.expiration_time || order.closing_date;
+    if (expiry && expiry < Math.floor(Date.now() / 1000)) return 'expired';
+    return 'active';
+  } catch (err) {
+    // 404 means it no longer exists on OpenSea
+    if (err.response?.status === 404) return 'cancelled';
+    logger.warn(`getOrderStatus(${orderHash}): ${err.message}`);
+    return 'unknown';
+  }
+}
+
 module.exports = {
   parseSlug,
   getDropInfo,
@@ -628,4 +654,5 @@ module.exports = {
   getNFTRarity,
   getCollectionFees,
   getEthPriceUsd,
+  getOrderStatus,
 };
