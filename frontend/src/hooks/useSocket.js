@@ -98,6 +98,10 @@ export function useSocket() {
       if (d.portfolioEntry) setPortfolio((prev) => [...prev, d.portfolioEntry]);
       if (d.orderHash) setBids((prev) => prev.filter((b) => b.orderHash !== d.orderHash));
     });
+    // Full portfolio sync (from sync endpoint or bid-fill poller)
+    socket.on('portfolio:sync', (d) => {
+      if (d.portfolio) setPortfolio(d.portfolio);
+    });
     socket.on('trade:list', (d) => {
       addLog('info', `Listed: ${d.collectionSlug || ''} #${d.tokenId} for ${d.priceEth} ETH`);
       setTrades((prev) => [{

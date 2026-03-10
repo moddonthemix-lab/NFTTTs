@@ -94,6 +94,66 @@ BOT_EVENTS.forEach((evt) => {
 let latestOpportunities = [];
 botEmitter.on('scan:opportunities', (d) => { latestOpportunities = d.opportunities || []; });
 
+// --- Autonomous bid-fill poller (runs every 2 min regardless of bot state) ---
+async function checkBidFills() {
+  if (!walletUtils.isConnected()) return;
+  const bids = db.getBids();
+  if (!bids.length) return;
+  try {
+    const wallet = walletUtils.getWallet();
+    const { nfts } = await openSeaApi.getNFTsByOwner(wallet.address, 100);
+    if (!nfts || !nfts.length) return;
+
+    const portfolio = db.getPortfolio();
+    const portfolioKeys = new Set(portfolio.map((n) => `${n.contractAddress?.toLowerCase()}-${n.tokenId}`));
+    const bidSlugs = new Set(bids.map((b) => b.collectionSlug));
+
+    let anyFill = false;
+    for (const nft of nfts) {
+      const key = `${nft.contract?.toLowerCase()}-${nft.identifier}`;
+      if (portfolioKeys.has(key)) continue;
+      if (!bidSlugs.has(nft.collection)) continue;
+
+      const matchedBid = bids.find((b) => b.collectionSlug === nft.collection);
+      const priceEth = parseFloat(matchedBid?.offerAmountEth || 0);
+      logger.info(`[BidPoller] Fill detected: ${nft.collection} #${nft.identifier} @ ${priceEth} ETH`);
+
+      db.addToPortfolio({
+        tokenId: nft.identifier,
+        contractAddress: nft.contract,
+        collectionSlug: nft.collection,
+        collectionName: nft.name || nft.collection,
+        collectionImage: nft.display_image_url || nft.image_url || null,
+        buyPriceEth: priceEth,
+        acquiredVia: 'bid_fill',
+      });
+      db.addTrade({
+        type: 'buy',
+        collectionSlug: nft.collection,
+        collectionName: nft.name || nft.collection,
+        tokenId: nft.identifier,
+        contractAddress: nft.contract,
+        priceEth,
+        source: 'bid_fill',
+      });
+      if (matchedBid?.orderHash) db.removeBidByOrderHash(matchedBid.orderHash);
+      io.emit('trade:bid_filled', {
+        collectionSlug: nft.collection,
+        tokenId: nft.identifier,
+        contractAddress: nft.contract,
+        offerAmountEth: matchedBid?.offerAmountEth,
+        orderHash: matchedBid?.orderHash,
+      });
+      anyFill = true;
+    }
+    if (anyFill) io.emit('portfolio:sync', { portfolio: db.getPortfolio() });
+  } catch (err) {
+    logger.warn(`[BidPoller] ${err.message}`);
+  }
+}
+// Run every 2 minutes
+setInterval(checkBidFills, 2 * 60 * 1000);
+
 // --- Socket.IO connection ---
 io.on('connection', (socket) => {
   logger.info(`Client connected: ${socket.id}`);
@@ -331,26 +391,60 @@ app.post('/api/portfolio/sync', async (req, res) => {
 
     const existing = db.getPortfolio();
     const existingKeys = new Set(existing.map((n) => `${n.contractAddress?.toLowerCase()}-${n.tokenId}`));
+    const bids = db.getBids();
 
     let added = 0;
+    const bidFills = [];
     for (const nft of nfts) {
       const key = `${nft.contract?.toLowerCase()}-${nft.identifier}`;
       if (existingKeys.has(key)) continue;
+
+      // Check if this NFT matches a stored collection bid (bid fill detection)
+      const matchedBid = bids.find((b) => b.collectionSlug === nft.collection);
+      const buyPriceEth = matchedBid ? parseFloat(matchedBid.offerAmountEth || 0) : 0;
+      const acquiredVia = matchedBid ? 'bid_fill' : 'wallet_sync';
+
       db.addToPortfolio({
         tokenId: nft.identifier,
         contractAddress: nft.contract,
         collectionSlug: nft.collection,
         collectionName: nft.name || nft.collection,
         collectionImage: nft.display_image_url || nft.image_url || null,
-        buyPriceEth: 0,
-        acquiredVia: 'wallet_sync',
+        buyPriceEth,
+        acquiredVia,
         chain,
       });
       existingKeys.add(key);
       added++;
+
+      if (matchedBid) {
+        // Record as a trade and remove the consumed bid
+        db.addTrade({
+          type: 'buy',
+          collectionSlug: nft.collection,
+          collectionName: nft.name || nft.collection,
+          tokenId: nft.identifier,
+          contractAddress: nft.contract,
+          priceEth: buyPriceEth,
+          source: 'bid_fill',
+        });
+        db.removeBidByOrderHash(matchedBid.orderHash);
+        bidFills.push({ collection: nft.collection, tokenId: nft.identifier, priceEth: buyPriceEth });
+        io.emit('trade:bid_filled', {
+          collectionSlug: nft.collection,
+          tokenId: nft.identifier,
+          contractAddress: nft.contract,
+          offerAmountEth: matchedBid.offerAmountEth,
+          orderHash: matchedBid.orderHash,
+        });
+      }
     }
 
-    res.json({ added, portfolio: db.getPortfolio() });
+    const portfolio = db.getPortfolio();
+    // Broadcast updated portfolio to all connected sockets
+    io.emit('portfolio:sync', { portfolio });
+
+    res.json({ added, bidFills, portfolio });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
