@@ -15,7 +15,7 @@ const config = {
     minProfitMargin: parseFloat(process.env.MIN_PROFIT_MARGIN || '0.30'),
     maxBudgetEth: parseFloat(process.env.MAX_BUDGET_ETH || '2.0'),
     bidFraction: parseFloat(process.env.BID_FRACTION || '0.85'),
-    maxPortfolioSize: parseInt(process.env.MAX_PORTFOLIO_SIZE || '10'),
+    maxPortfolioSize: parseInt(process.env.MAX_PORTFOLIO_SIZE || '100'),
   },
   scanner: {
     intervalSeconds: parseInt(process.env.SCAN_INTERVAL_SECONDS || '60'),
