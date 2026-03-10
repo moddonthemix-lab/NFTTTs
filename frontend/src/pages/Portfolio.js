@@ -250,6 +250,7 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
     return sum + (exit * 0.925 - n.buyPriceEth);
   }, 0);
   const totalPnlPct = totalCost > 0 ? (totalPnlEth / totalCost) * 100 : null;
+  const canSell = (nft) => !!(nft.contractAddress && nft.tokenId);
 
   return (
     <div style={styles.page}>
