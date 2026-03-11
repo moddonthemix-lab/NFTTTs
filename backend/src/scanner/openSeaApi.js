@@ -611,6 +611,24 @@ async function getDropInfo(slugOrUrl, walletAddress = null, chain = 'ethereum') 
 }
 
 /**
+ * Get recent sale activity for a wallet address.
+ * Returns sale events where the wallet was buyer or seller.
+ */
+async function getWalletActivity(walletAddress, limit = 20) {
+  return rateLimitedCall(async () => {
+    try {
+      const res = await api.get(`/events/accounts/${walletAddress}`, {
+        params: { event_type: 'sale', limit },
+      });
+      return res.data.asset_events || [];
+    } catch (err) {
+      logger.error(`OpenSea getWalletActivity(${walletAddress}) error: ${err.message}`);
+      return [];
+    }
+  });
+}
+
+/**
  * Check if a Seaport order is still active on OpenSea.
  * Returns 'active' | 'cancelled' | 'filled' | 'expired' | 'unknown'
  */
@@ -638,6 +656,7 @@ async function getOrderStatus(orderHash, chain = 'ethereum') {
 
 module.exports = {
   parseSlug,
+  getWalletActivity,
   getDropInfo,
   checkEligibility,
   clearFeesCache,

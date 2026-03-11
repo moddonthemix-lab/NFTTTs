@@ -969,6 +969,59 @@ app.get('/api/whales/:address/nfts', async (req, res) => {
   }
 });
 
+// Fetch recent sale activity for a tracked wallet.
+// Detects buys (wallet is buyer) and auto-adds those collections to the connected wallet's watchlist.
+app.get('/api/whales/:address/activity', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const rawEvents = await openSeaApi.getWalletActivity(address, 20);
+    const addrLower = address.toLowerCase();
+
+    const events = rawEvents.map((e) => {
+      const qty = e.payment?.quantity;
+      const dec = e.payment?.decimals ?? 18;
+      let priceEth = null;
+      if (qty) {
+        try {
+          priceEth = parseFloat((BigInt(qty) * 1000000n / (10n ** BigInt(dec))).toString()) / 1e6;
+        } catch { /* malformed qty */ }
+      }
+      const isBuy = (e.buyer || '').toLowerCase() === addrLower;
+      return {
+        type: isBuy ? 'buy' : 'sell',
+        collection: e.nft?.collection || null,
+        nftName: e.nft?.name || null,
+        nftImage: e.nft?.image_url || null,
+        tokenId: e.nft?.identifier || null,
+        priceEth,
+        txHash: e.transaction || null,
+        timestamp: e.event_timestamp || null,
+      };
+    });
+
+    // Auto-add buy collections to the connected wallet's watchlist
+    const autoWatchlisted = [];
+    const userWallet = wa();
+    if (userWallet) {
+      const existingSlugs = new Set(db.getWatchlist(userWallet).map((w) => w.slug));
+      const seen = new Set();
+      for (const ev of events) {
+        if (ev.type === 'buy' && ev.collection && !seen.has(ev.collection)) {
+          seen.add(ev.collection);
+          if (!existingSlugs.has(ev.collection)) {
+            db.addToWatchlist(userWallet, { slug: ev.collection, name: ev.collection });
+            autoWatchlisted.push(ev.collection);
+          }
+        }
+      }
+    }
+
+    res.json({ address, events, autoWatchlisted });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Snipers ---
 app.get('/api/snipers', (req, res) => {
   res.json(db.getSnipers());
