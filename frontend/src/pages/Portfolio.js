@@ -13,6 +13,8 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
   const [royaltyOn, setRoyaltyOn] = useState({});   // { [k]: boolean } — optional royalty toggle
   const [syncing, setSyncing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [floorPrices, setFloorPrices] = useState({});  // { [slug]: number | null }
+  const [floorLoading, setFloorLoading] = useState(false);
   const [nftImages, setNftImages] = useState({});      // { [k]: url | null | 'loading' }
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkAcceptMode, setBulkAcceptMode] = useState(false);
@@ -27,6 +29,25 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
     const usd = eth * ethPrice;
     return usd >= 1000 ? `$${Math.round(usd).toLocaleString()}` : `$${usd.toFixed(2)}`;
   };
+
+  // Load live floor prices for all unique collection slugs in the portfolio
+  const loadFloorPrices = useCallback(async (pf) => {
+    const slugs = [...new Set((pf || []).map((n) => n.collectionSlug).filter(Boolean))];
+    if (!slugs.length) return;
+    setFloorLoading(true);
+    const results = await Promise.allSettled(slugs.map((slug) => scannerApi.getInfo(slug)));
+    const updated = {};
+    results.forEach((r, i) => {
+      updated[slugs[i]] = r.status === 'fulfilled' ? (r.value?.floorPriceEth ?? null) : null;
+    });
+    setFloorPrices((prev) => ({ ...prev, ...updated }));
+    setFloorLoading(false);
+  }, []);
+
+  // Fetch floors whenever portfolio changes
+  useEffect(() => {
+    loadFloorPrices(portfolio);
+  }, [portfolio, loadFloorPrices]);
 
   // Lazy-load individual NFT images for cards that have no collectionImage
   useEffect(() => {
@@ -49,6 +70,7 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
     try {
       const updated = await portfolioApi.get();
       if (setPortfolio) setPortfolio(updated);
+      await loadFloorPrices(updated);
     } catch { /* silent */ }
     setRefreshing(false);
   };
@@ -242,12 +264,19 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
       : `${done} listed, ${failed} failed — check console for details`);
   };
 
+  // Use live floor price from state; fall back to stale stored floor only if live not yet loaded
+  const liveFloor = (nft) => {
+    const slug = nft.collectionSlug;
+    if (slug && slug in floorPrices) return floorPrices[slug];
+    return nft.floorPriceEth ?? null;
+  };
+
   const totalCost  = (portfolio || []).reduce((sum, n) => sum + (n.buyPriceEth || 0), 0);
-  const totalValue = (portfolio || []).reduce((sum, n) => sum + (n.floorPriceEth || 0), 0);
+  const totalValue = (portfolio || []).reduce((sum, n) => sum + (liveFloor(n) || 0), 0);
   const totalPnlEth = (portfolio || []).reduce((sum, n) => {
-    const exit = n.floorPriceEth;
-    if (!exit || !n.buyPriceEth) return sum;
-    return sum + (exit * 0.925 - n.buyPriceEth);
+    const fp = liveFloor(n);
+    if (!fp || !n.buyPriceEth) return sum;
+    return sum + (fp * 0.925 - n.buyPriceEth);
   }, 0);
   const totalPnlPct = totalCost > 0 ? (totalPnlEth / totalCost) * 100 : null;
   const canSell = (nft) => !!(nft.contractAddress && nft.tokenId);
@@ -285,7 +314,7 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button style={styles.syncBtn} onClick={handleRefresh} disabled={refreshing}>
-            {refreshing ? '...' : '↻ Refresh'}
+            {refreshing ? '...' : floorLoading ? '↻ Updating floors…' : '↻ Refresh'}
           </button>
           {!bulkMode && !bulkAcceptMode ? (
             <>
@@ -326,13 +355,15 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
             const offerData = bestOffers[k];
             const feeData = fees[k];
             const sellable = canSell(nft);
-            // Profit % = realistic net-of-fees exit vs what was paid.
-            // Prefer collection best offer (floor bid — guaranteed exit) if fetched,
-            // else fall back to floor price. Both are adjusted for ~7.5% total fees
-            // (1% marketplace + ~5-7% royalty) so the number reflects actual proceeds.
-            const exitPrice = offerData?.priceEth ?? nft.floorPriceEth;
+            // Use live floor price; fall back to best offer or stale floor
+            const currentFloor = liveFloor(nft);
+            const exitPrice = offerData?.priceEth ?? currentFloor;
             const profit = exitPrice && nft.buyPriceEth
               ? (((exitPrice * 0.925) - nft.buyPriceEth) / nft.buyPriceEth * 100)
+              : null;
+            // Floor delta vs stored purchase-time floor (shows how floor moved)
+            const floorDelta = currentFloor != null && nft.floorPriceEth != null && nft.floorPriceEth > 0
+              ? currentFloor - nft.floorPriceEth
               : null;
 
             const imgSrc = nft.collectionImage || (nftImages[k] !== 'loading' ? nftImages[k] : null);
@@ -386,18 +417,37 @@ export default function Portfolio({ portfolio, setPortfolio, ethPrice }) {
 
                   <div style={styles.meta}>
                     <MetaItem label="Paid" value={`${fmt(nft.buyPriceEth)} ETH`} sub={fmtUsd(nft.buyPriceEth)} />
-                    {nft.floorPriceEth > 0 && (
-                      <MetaItem
-                        label="Floor"
-                        value={`${fmt(nft.floorPriceEth)} ETH`}
-                      />
-                    )}
+                    <MetaItem
+                      label={floorLoading && currentFloor == null ? 'Floor…' : 'Floor (live)'}
+                      value={
+                        floorLoading && currentFloor == null
+                          ? <span style={{ color: '#475569' }}>loading…</span>
+                          : currentFloor != null
+                            ? (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <span>{fmt(currentFloor)} ETH</span>
+                                {floorDelta != null && (
+                                  <span style={{ fontSize: 10, fontWeight: 600, color: floorDelta >= 0 ? '#22c55e' : '#ef4444' }}>
+                                    {floorDelta >= 0 ? '+' : ''}{fmt(floorDelta, 4)}
+                                  </span>
+                                )}
+                              </span>
+                            )
+                            : <span style={{ color: '#475569' }}>—</span>
+                      }
+                      sub={currentFloor != null ? fmtUsd(currentFloor) : null}
+                    />
                     {profit != null && (
                       <MetaItem
                         label={offerData?.priceEth ? 'P&L (bid)' : 'P&L (floor)'}
                         value={
                           <span style={{ color: profit >= 0 ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
                             {profit >= 0 ? '+' : ''}{profit.toFixed(1)}%
+                            {nft.buyPriceEth && exitPrice && (
+                              <span style={{ fontWeight: 400, marginLeft: 4, fontSize: 11 }}>
+                                ({profit >= 0 ? '+' : ''}{fmt((exitPrice * 0.925) - nft.buyPriceEth, 4)} ETH)
+                              </span>
+                            )}
                           </span>
                         }
                         sub="after fees"
